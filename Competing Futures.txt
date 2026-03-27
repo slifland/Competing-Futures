@@ -1,0 +1,137 @@
+﻿Competing Futures
+An AI Strategy Game
+Team Indigo:  Jason Chin, Lily Egenrieder, Matthew Janicki, Seth Lifland, Sarah Petchel, and Katherine Anne Rukavina
+
+
+Overview
+Competing Futures is a competitive strategy online board game in which players take on the roles of major actors in the global AI development landscape. Each faction pursues hidden objectives drawn at the beginning of the game, and each turn global event cards disrupt player plans. The game ends when a Singularity card is drawn, turns run out, or a player reaches a victory point threshold. It is possible for multiple players to win simultaneously if they all achieve their objectives at the time the game concludes.
+Adjusted Plans & Progress
+Our project is currently on schedule. Our major progress has last been in ironing out the actual logistics of how the game will be played, as summarized below. Here is a link to our group meeting notes for game mechanics and design. Specifically, we decided on our five actors, removing the US Adversaries faction and the Press and Civil Society faction, and added in a second AI lab in order to be able to model competition between them. Press has been modeled as a meter in the game, as it is a core indicator of success for the other factions. The reasons for removing these factions are that, as we started to concretely model what the game systems would look like, we realized that press and civil society and US adversaries both posed strong challenges to a standardized game loop. What we mean by this is that they have such different goals and aims relative to the other players that creating specific mechanics for them wasn’t worth the benefit they would bring to the game as a faction, in the same way it could be for including a frontier AI Model player.
+
+
+The next steps include identifying more specific probabilities within event cards through research, and specifying action cards for each player. Then, the project will shift towards designing a website to be able to play online. Time permitting, we will also create a physical version of the game. We have no questions or concerns at the time.
+Deliverables
+For our final draft presentation, we will showcase our completed virtual board game. This will include explaining the board game mechanics and a small demonstration of how the game works.
+Game Loop
+Setup
+* Each player selects or is assigned a faction.
+* Each player then draws their objective cards, specifying track positions and conditions needed to win. This adds a level of randomness and variability when the game is played multiple times. 
+Each Round
+1. Draw and choose action cards
+Every player draws X action cards from their personal deck and simultaneously selects one card to play face-down. 
+
+
+2. Resolve global event card
+One global event card is drawn and resolved. Events may affect all players or only targeted factions.
+
+
+3. Resolve player actions
+Players reveal their chosen action cards and resolve them in turn order. Actions affect meters and could modify other players’ decks.
+
+
+Factions & Victory Conditions
+Each player draws objective cards at the start of the game specifying the track positions and conditions they must achieve to win. 
+Faction 1 — US Government
+Win conditions:
+* Reach specific capability profile targets on the capabilities track
+* Maintain safety investment above a minimum floor
+* Maintain sufficient public support
+Faction 2 — China & Adversaries
+Win conditions:
+* If Chinese capability exceeds US capability by X points at any point, China wins instantly
+   * Potentially subject to something like a safety roll - lower safety investment = higher chance frontier model usurps this victory, higher safety investment = lower chance
+
+
+Faction 3 — Frontier Lab A
+Win conditions:
+* Achieves market cap score of x points
+* Reach a capabilities score of at least X and higher than Lab B
+Faction 4 — Frontier Lab B
+Win conditions:
+* Achieves market cap score of x points
+* Reach a capabilities score of at least X and higher than Lab A
+Faction 5 — Frontier AI Model
+Win conditions:
+* Achieves capabilities score of x points
+* Maintain sufficient public support and safety investment
+Player Meters
+All factions track the following meters throughout the game. Objective cards specify target values on each of these tracks.
+
+
+Meter
+	Description
+	Capabilities
+	AI advancement track.
+	Safety Investment
+	Tracks investment in alignment and safety research.
+	Market Cap
+	Economic power and corporate influence.
+	Public Support
+	Political and societal goodwill. 
+	
+
+Action Cards
+Each faction has a personal action deck. At the start of each round, players draw X cards and choose one to play face-down. Other players’ actions can modify your deck — removing, adding, or reordering cards.
+
+
+Possible Action Cards
+* US Govt
+   * Increase federal funding 
+   * Chip export ban
+   * Public campaign- against/for AI
+   * AI regulation
+   * International AI Treaty
+   * Espionage
+* China & Adversaries
+   * Espionage
+   * Propaganda campaign
+   * AI funding
+   * Steal researchers from Frontier Lab A/B
+   * Undermine AI regulation
+* Frontier Lab A/B
+   * New product launch
+   * Alliance
+   * Hire more researchers
+   * Train new model
+   * Public campaign for their product
+* Frontier AI Model
+   * Self-improvement
+   * Learns faster
+   * More public support 
+   * Optimize model
+   * Share knowledge
+   * Conduct Research
+
+
+Global Event Cards
+One event card is drawn at the start of each round. Events can be interactive, such as evoking bids or other miniature games.  They can also affect meters of one or more factions.
+Possible Event Cards
+* China invades Taiwan
+* China steals model weights of US frontier lab
+* AGI created (AGI) 
+* Global AI Regulation Treaty developed
+* Autonomous weapons ban failure or success
+* A treatment or cure is found for a major disease
+* Deepfake election crisis 
+* UBI adopted in X countries
+* AI developed pandemic pathogen/chemical weapon
+* Large scale AI assisted/automated cyber attack on something important (i.e critical infrastructure, government, big banks, etc.)
+* Global semiconductor trade war escalation
+* US AI labs nationalized
+* AI facilitated surveillance states develop
+
+
+
+
+End Conditions
+The game ends when any of the following occur:
+
+
+Condition
+	Description
+	Singularity card drawn
+	The Singularity card is shuffled into the event deck. When drawn, it may trigger an end-phase countdown (e.g., 3 rounds of ‘takeoff’ before the game resolves) or end the game immediately
+	Finite amount of rounds
+	The game ends when the round counter reaches zero. Final scores are tallied.
+	Victory point threshold
+	The game ends when one or more players exceeds their privately defined victory conditions. Any players above their threshold win simultaneously.
