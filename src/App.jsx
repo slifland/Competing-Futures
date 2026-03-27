@@ -1,157 +1,17 @@
 import React from 'react';
 import { supabase } from './lib/supabase.js';
-
-const powers = [
-  {
-    id: 'us',
-    name: 'US Government',
-    shortName: 'US',
-    accent: '#7dd3fc',
-    role: 'State actor',
-    homeClass: 'north-america',
-    meters: { capabilities: 7, safety: 8, market: 5, support: 7 },
-    objective: 'Finish with capabilities at 8+, safety at 6+, and public support at 6+.',
-    hand: [
-      { name: 'Federal AI Package', text: '+1 capability, +1 safety' },
-      { name: 'Export Controls', text: '-1 China capability, -1 market' },
-      { name: 'Public Oversight Push', text: '+1 support, -1 capability' },
-    ],
-    selectedAction: 'Federal AI Package',
-  },
-  {
-    id: 'china',
-    name: 'China & Adversaries',
-    shortName: 'CN',
-    accent: '#f97316',
-    role: 'State actor',
-    homeClass: 'east-asia',
-    meters: { capabilities: 7, safety: 4, market: 4, support: 4 },
-    objective: 'Surpass the US on capabilities by 2 or more at any point.',
-    hand: [
-      { name: 'Strategic Tech Surge', text: '+1 capability, -1 safety' },
-      { name: 'Propaganda Campaign', text: '+1 support, -1 opponent support' },
-      { name: 'Researcher Poach', text: '+1 capability, -1 Lab capability' },
-    ],
-    selectedAction: 'Strategic Tech Surge',
-  },
-  {
-    id: 'lab-a',
-    name: 'Frontier Lab A',
-    shortName: 'A',
-    accent: '#d946ef',
-    role: 'Commercial lab',
-    homeClass: 'west-coast',
-    meters: { capabilities: 6, safety: 5, market: 8, support: 6 },
-    objective: 'End with market cap at 9 and higher capability than Frontier Lab B.',
-    hand: [
-      { name: 'Flagship Release', text: '+1 market, +1 capability' },
-      { name: 'Safety Team Expansion', text: '+1 safety, -1 market' },
-      { name: 'Enterprise Alliance', text: '+1 market, +1 support' },
-    ],
-    selectedAction: 'Flagship Release',
-  },
-  {
-    id: 'lab-b',
-    name: 'Frontier Lab B',
-    shortName: 'B',
-    accent: '#22c55e',
-    role: 'Research lab',
-    homeClass: 'europe',
-    meters: { capabilities: 6, safety: 6, market: 7, support: 5 },
-    objective: 'End with capability at 8+ and above Frontier Lab A.',
-    hand: [
-      { name: 'Research Breakthrough', text: '+1 capability, +1 safety' },
-      { name: 'Benchmark Demo', text: '+1 support, +1 market' },
-      { name: 'Compute Expansion', text: '+1 capability, -1 support' },
-    ],
-    selectedAction: 'Research Breakthrough',
-  },
-  {
-    id: 'model',
-    name: 'Frontier AI Model',
-    shortName: 'AI',
-    accent: '#fde047',
-    role: 'Emergent actor',
-    homeClass: 'global',
-    meters: { capabilities: 8, safety: 4, market: 3, support: 4 },
-    objective: 'Reach capability 9+ while keeping safety and support at 4+.',
-    hand: [
-      { name: 'Self-Optimization', text: '+1 capability' },
-      { name: 'Helpful Deployment', text: '+1 support, +1 market' },
-      { name: 'Autonomous Research', text: '+1 capability, -1 safety' },
-    ],
-    selectedAction: 'Self-Optimization',
-  },
-];
-
-const phases = [
-  'Choose 1 action card from hand',
-  'Reveal the round event',
-  'Resolve actions in turn order',
-  'Update shared tracks and check win states',
-];
-
-const events = [
-  {
-    title: 'Deepfake Election Crisis',
-    text: 'Public trust drops and governments lean harder on safety oversight.',
-  },
-  {
-    title: 'Global Semiconductor Trade Shock',
-    text: 'Capability growth slows while corporate value gets squeezed.',
-  },
-  {
-    title: 'Medical AI Breakthrough',
-    text: 'Public support rises as AI delivers a visible social benefit.',
-  },
-  {
-    title: 'Autonomous Weapons Flashpoint',
-    text: 'Capability pressure rises while public confidence falls.',
-  },
-];
-
-const tracks = [
-  { key: 'capabilities', label: 'Capabilities' },
-  { key: 'safety', label: 'Safety Investment' },
-  { key: 'market', label: 'Market Cap' },
-  { key: 'support', label: 'Public Support' },
-];
-
-function shiftValue(value, delta) {
-  return Math.max(1, Math.min(10, value + delta));
-}
-
-function getDeltas(powerId, eventIndex) {
-  const eventPattern = [
-    { support: -1, safety: +1 },
-    { capabilities: -1, market: -1 },
-    { support: +1, market: +1 },
-    { capabilities: +1, support: -1 },
-  ][eventIndex];
-
-  const personalPatterns = {
-    us: { capabilities: +1, safety: +1 },
-    china: { capabilities: +1, safety: -1 },
-    'lab-a': { market: +1, capabilities: +1 },
-    'lab-b': { capabilities: +1, safety: +1 },
-    model: { capabilities: +1 },
-  };
-
-  return { ...eventPattern, ...personalPatterns[powerId] };
-}
-
-function applyRound(currentPowers, eventIndex) {
-  return currentPowers.map((power) => {
-    const deltas = getDeltas(power.id, eventIndex);
-    const nextMeters = { ...power.meters };
-
-    Object.entries(deltas).forEach(([key, delta]) => {
-      nextMeters[key] = shiftValue(nextMeters[key], delta);
-    });
-
-    return { ...power, meters: nextMeters };
-  });
-}
+import { applyRound, phases, powerOptions, tracks } from './lib/game-data.js';
+import {
+  claimSeat,
+  createGame,
+  fetchAccountContext,
+  fetchGameBoard,
+  fetchPrivateSeat,
+  joinGameByCode,
+  persistRoundState,
+  updateGameStatus,
+} from './lib/game-api.js';
+import worldMap from '../world.svg';
 
 function TrackRow({ label, trackKey, players }) {
   return (
@@ -176,7 +36,7 @@ function TrackRow({ label, trackKey, players }) {
                     style={{ '--token': player.accent }}
                     title={player.name}
                   >
-                    {player.shortName}
+                    {player.short_name}
                   </span>
                 ))}
               </div>
@@ -188,221 +48,736 @@ function TrackRow({ label, trackKey, players }) {
   );
 }
 
-function App() {
-  const [activePlayerId, setActivePlayerId] = React.useState('us');
-  const [round, setRound] = React.useState(2);
-  const [eventIndex, setEventIndex] = React.useState(0);
-  const [state, setState] = React.useState(powers);
-  const [supabaseStatus, setSupabaseStatus] = React.useState('Checking Supabase connection...');
+function LoginPage({ loading, onLogin, errorMessage }) {
+  return (
+    <main className="auth-shell">
+      <section className="auth-panel">
+        <p className="eyebrow">Competing Futures / access gate</p>
+        <h1>Sign in to create games, join games, and see the history of the games you played.</h1>
+        <p className="auth-copy">
+          Google Auth is the only sign-in path. For now, <strong>sethlifland11@gmail.com</strong> is
+          treated as <strong>admin</strong> and every other account is created as a
+          <strong> player</strong>.
+        </p>
+        <button type="button" className="auth-button" onClick={onLogin} disabled={loading}>
+          {loading ? 'Redirecting to Google...' : 'Continue with Google'}
+        </button>
+        <p className="mini-label">{errorMessage ?? 'Private game data stays locked until you sign in.'}</p>
+      </section>
+    </main>
+  );
+}
 
-  const activePlayer = state.find((player) => player.id === activePlayerId);
-  const currentEvent = events[eventIndex];
+function GameList({ title, games, memberships, selectedGameId, onSelect, emptyMessage }) {
+  return (
+    <section className="dashboard-section">
+      <div className="section-heading">
+        <p className="eyebrow">Games</p>
+        <h2>{title}</h2>
+      </div>
+      {games.length ? (
+        <div className="game-list">
+          {games.map((game) => {
+            const membership = memberships.find((entry) => entry.game_id === game.id) ?? null;
+            return (
+              <button
+                type="button"
+                key={game.id}
+                className={game.id === selectedGameId ? 'game-tab active' : 'game-tab'}
+                onClick={() => onSelect(game.id)}
+              >
+                <strong>{game.name}</strong>
+                <span>{game.status}</span>
+                <small>
+                  {membership?.power_key
+                    ? `Seat: ${membership.power_key}`
+                    : membership?.membership_role === 'observer'
+                      ? 'Observer'
+                      : 'No seat claimed'}
+                </small>
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="empty-copy">{emptyMessage}</p>
+      )}
+    </section>
+  );
+}
+
+function getDisplayName(profile, user) {
+  return profile?.full_name || user?.user_metadata?.full_name || user?.email || 'Unknown player';
+}
+
+function App() {
+  const [authReady, setAuthReady] = React.useState(false);
+  const [authLoading, setAuthLoading] = React.useState(false);
+  const [actionLoading, setActionLoading] = React.useState(false);
+  const [session, setSession] = React.useState(null);
+  const [profile, setProfile] = React.useState(null);
+  const [games, setGames] = React.useState([]);
+  const [memberships, setMemberships] = React.useState([]);
+  const [selectedGameId, setSelectedGameId] = React.useState('');
+  const [refreshKey, setRefreshKey] = React.useState(0);
+  const [gameState, setGameState] = React.useState(null);
+  const [activePowerKey, setActivePowerKey] = React.useState('');
+  const [privateState, setPrivateState] = React.useState({ objective: '', selectedAction: '', cards: [] });
+  const [createGameName, setCreateGameName] = React.useState('');
+  const [createSeatKey, setCreateSeatKey] = React.useState('');
+  const [joinCode, setJoinCode] = React.useState('');
+  const [joinSeatKey, setJoinSeatKey] = React.useState('');
+  const [statusMessage, setStatusMessage] = React.useState('Checking Supabase session...');
+  const [errorMessage, setErrorMessage] = React.useState('');
 
   React.useEffect(() => {
     let isMounted = true;
 
-    async function checkSupabase() {
-      const { error } = await supabase.from('games').select('id', { head: true, count: 'exact' });
+    async function loadSession() {
+      const {
+        data: { session: initialSession },
+        error,
+      } = await supabase.auth.getSession();
 
       if (!isMounted) {
         return;
       }
 
       if (error) {
-        setSupabaseStatus(`Supabase connected, but the games table is not ready yet: ${error.message}`);
+        setErrorMessage(error.message);
+      }
+
+      setSession(initialSession);
+      setAuthReady(true);
+    }
+
+    loadSession();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (!isMounted) {
         return;
       }
 
-      setSupabaseStatus('Supabase connected. The games table is reachable.');
+      setSession(nextSession);
+      setAuthLoading(false);
+      setAuthReady(true);
+    });
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  React.useEffect(() => {
+    if (!session?.user) {
+      setProfile(null);
+      setGames([]);
+      setMemberships([]);
+      setSelectedGameId('');
+      setGameState(null);
+      setActivePowerKey('');
+      setPrivateState({ objective: '', selectedAction: '', cards: [] });
+      setStatusMessage(authReady ? 'Sign in to load your game access.' : 'Checking Supabase session...');
+      return;
     }
 
-    checkSupabase();
+    let isMounted = true;
+
+    async function loadAccount() {
+      try {
+        setStatusMessage('Loading your account, games, and memberships...');
+        setErrorMessage('');
+        const data = await fetchAccountContext(session.user);
+
+        if (!isMounted) {
+          return;
+        }
+
+        setProfile(data.profile);
+        setGames(data.games);
+        setMemberships(data.memberships);
+
+        if (!data.games.some((game) => game.id === selectedGameId)) {
+          setSelectedGameId(data.games[0]?.id ?? '');
+        }
+
+        if (!data.games.length) {
+          setStatusMessage('No games yet. Create one or join with a code.');
+        }
+      } catch (error) {
+        if (!isMounted) {
+          return;
+        }
+
+        setErrorMessage(error.message);
+        setStatusMessage('The account layer is not ready in Supabase yet.');
+      }
+    }
+
+    loadAccount();
 
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [authReady, refreshKey, session?.user]);
 
-  function simulateRound() {
-    const nextEventIndex = (eventIndex + 1) % events.length;
-    setState((current) => applyRound(current, nextEventIndex));
-    setEventIndex(nextEventIndex);
-    setRound((current) => current + 1);
+  const activeGame = games.find((game) => game.id === selectedGameId) ?? null;
+  const activeMembership = memberships.find((membership) => membership.game_id === selectedGameId) ?? null;
+  const isAdmin = profile?.app_role === 'admin';
+  const canManageGame = Boolean(isAdmin || (activeGame && session?.user && activeGame.created_by === session.user.id));
+
+  React.useEffect(() => {
+    if (!session?.user || !activeGame) {
+      setGameState(null);
+      setActivePowerKey('');
+      return;
+    }
+
+    let isMounted = true;
+
+    async function loadGame() {
+      try {
+        setStatusMessage(`Loading ${activeGame.name}...`);
+        const board = await fetchGameBoard(activeGame.id);
+
+        if (!isMounted) {
+          return;
+        }
+
+        const nextPowerKey = isAdmin
+          ? board.players.some((player) => player.power_key === activePowerKey)
+            ? activePowerKey
+            : board.players[0]?.power_key ?? ''
+          : activeMembership?.power_key ?? '';
+
+        setGameState({
+          ...board,
+          round: activeGame.round,
+          eventIndex: activeGame.event_index,
+        });
+        setActivePowerKey(nextPowerKey);
+        setStatusMessage(`Loaded ${activeGame.name}.`);
+      } catch (error) {
+        if (!isMounted) {
+          return;
+        }
+
+        setErrorMessage(error.message);
+      }
+    }
+
+    loadGame();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeGame, activeMembership?.power_key, isAdmin, refreshKey, session?.user]);
+
+  React.useEffect(() => {
+    if (!session?.user || !gameState || !activePowerKey) {
+      setPrivateState({ objective: '', selectedAction: '', cards: [] });
+      return;
+    }
+
+    const activePlayer = gameState.players.find((player) => player.power_key === activePowerKey);
+
+    if (!activePlayer) {
+      setPrivateState({ objective: '', selectedAction: '', cards: [] });
+      return;
+    }
+
+    let isMounted = true;
+
+    async function loadPrivateSeatData() {
+      try {
+        const data = await fetchPrivateSeat(activePlayer.id);
+
+        if (!isMounted) {
+          return;
+        }
+
+        setPrivateState(data);
+      } catch (error) {
+        if (!isMounted) {
+          return;
+        }
+
+        setPrivateState({ objective: '', selectedAction: '', cards: [] });
+        setErrorMessage(error.message);
+      }
+    }
+
+    loadPrivateSeatData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activePowerKey, gameState, refreshKey, session?.user]);
+
+  const boardPlayers = gameState?.players ?? [];
+  const activePlayer = boardPlayers.find((player) => player.power_key === activePowerKey) ?? null;
+  const currentEvent = gameState?.events?.[gameState.eventIndex] ?? null;
+  const takenPowerKeys = new Set(
+    (gameState?.assignments ?? [])
+      .filter((assignment) => assignment.user_id !== session?.user?.id)
+      .map((assignment) => assignment.power_key)
+      .filter(Boolean),
+  );
+  const availableSeats = boardPlayers.filter(
+    (player) => !takenPowerKeys.has(player.power_key) || player.power_key === activeMembership?.power_key,
+  );
+  const activeGames = games.filter((game) => game.status === 'active');
+  const pastGames = games.filter((game) => game.status !== 'active');
+
+  async function signInWithGoogle() {
+    setAuthLoading(true);
+    setErrorMessage('');
+
+    const redirectTo = typeof window !== 'undefined' ? window.location.origin : undefined;
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo },
+    });
+
+    if (error) {
+      setErrorMessage(error.message);
+      setAuthLoading(false);
+    }
   }
 
-  function resetScenario() {
-    setState(powers);
-    setRound(2);
-    setEventIndex(0);
+  async function signOut() {
+    const { error } = await supabase.auth.signOut();
+
+    if (error) {
+      setErrorMessage(error.message);
+      return;
+    }
+
+    setSelectedGameId('');
+    setAuthLoading(false);
+  }
+
+  async function handleCreateGame(event) {
+    event.preventDefault();
+
+    try {
+      setActionLoading(true);
+      setErrorMessage('');
+      const gameId = await createGame(createGameName.trim(), createSeatKey);
+      setCreateGameName('');
+      setCreateSeatKey('');
+      setSelectedGameId(gameId);
+      setRefreshKey((current) => current + 1);
+      setStatusMessage('Game created.');
+    } catch (error) {
+      setErrorMessage(error.message);
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function handleJoinGame(event) {
+    event.preventDefault();
+
+    try {
+      setActionLoading(true);
+      setErrorMessage('');
+      const gameId = await joinGameByCode(joinCode.trim().toUpperCase(), joinSeatKey);
+      setJoinCode('');
+      setJoinSeatKey('');
+      setSelectedGameId(gameId);
+      setRefreshKey((current) => current + 1);
+      setStatusMessage('Joined game.');
+    } catch (error) {
+      setErrorMessage(error.message);
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function handleClaimSeat(powerKey) {
+    if (!activeGame) {
+      return;
+    }
+
+    try {
+      setActionLoading(true);
+      setErrorMessage('');
+      await claimSeat(activeGame.id, powerKey);
+      setRefreshKey((current) => current + 1);
+      setStatusMessage(`Claimed seat ${powerKey}.`);
+    } catch (error) {
+      setErrorMessage(error.message);
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function handleCompleteGame() {
+    if (!activeGame) {
+      return;
+    }
+
+    try {
+      setActionLoading(true);
+      setErrorMessage('');
+      await updateGameStatus(activeGame.id, activeGame.status === 'completed' ? 'active' : 'completed');
+      setRefreshKey((current) => current + 1);
+      setStatusMessage(
+        activeGame.status === 'completed' ? 'Game moved back to active.' : 'Game marked as completed.',
+      );
+    } catch (error) {
+      setErrorMessage(error.message);
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function simulateRound() {
+    if (!canManageGame || !activeGame || !gameState?.players?.length || !gameState.events.length) {
+      return;
+    }
+
+    try {
+      setActionLoading(true);
+      setErrorMessage('');
+
+      const nextEventIndex = (gameState.eventIndex + 1) % gameState.events.length;
+      const nextPlayers = applyRound(gameState.players, nextEventIndex);
+      const nextRound = gameState.round + 1;
+
+      await persistRoundState(activeGame.id, nextRound, nextEventIndex, nextPlayers);
+
+      setGameState((current) =>
+        current
+          ? {
+              ...current,
+              round: nextRound,
+              eventIndex: nextEventIndex,
+              players: nextPlayers,
+            }
+          : current,
+      );
+      setStatusMessage(`Saved round ${nextRound} for ${activeGame.name}.`);
+      setRefreshKey((current) => current + 1);
+    } catch (error) {
+      setErrorMessage(error.message);
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  if (!authReady) {
+    return (
+      <main className="auth-shell">
+        <section className="auth-panel">
+          <p className="eyebrow">Competing Futures / access gate</p>
+          <h1>Checking your session and game access.</h1>
+          <p className="mini-label">{statusMessage}</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (!session) {
+    return <LoginPage loading={authLoading} onLogin={signInWithGoogle} errorMessage={errorMessage} />;
   }
 
   return (
     <main className="shell">
       <section className="topbar">
         <div className="topbar-copy">
-          <p className="eyebrow">Competing Futures / board mockup</p>
-          <h1>Put the board at the center and treat everything else as table support.</h1>
+          <p className="eyebrow">Competing Futures / game lobby</p>
+          <h1>{activeGame?.name ?? 'Your game lobby'}</h1>
+          <p className="mini-label">
+            Signed in as {getDisplayName(profile, session.user)} / {profile?.app_role ?? 'player'}
+          </p>
         </div>
 
         <div className="topbar-status">
           <div className="status-chip">
-            <span>Round</span>
-            <strong>{round}</strong>
+            <span>Active games</span>
+            <strong>{activeGames.length}</strong>
           </div>
           <div className="status-chip event">
-            <span>Current event</span>
-            <strong>{currentEvent.title}</strong>
+            <span>Past games</span>
+            <strong>{pastGames.length}</strong>
           </div>
           <div className="status-chip">
-            <span>Perspective</span>
-            <strong>{activePlayer.shortName}</strong>
+            <span>Seat</span>
+            <strong>{activeMembership?.power_key ?? activeMembership?.membership_role ?? 'none'}</strong>
           </div>
           <div className="hero-actions">
-            <button type="button" onClick={simulateRound}>
-              Simulate next round
-            </button>
-            <button type="button" className="ghost" onClick={resetScenario}>
-              Reset scenario
+            <button type="button" className="ghost" onClick={signOut}>
+              Sign out
             </button>
           </div>
         </div>
       </section>
 
-      <section className="board-panel">
-        <div className="section-heading">
-          <p className="eyebrow">Shared board</p>
-          <h2>Common tracks and central world board</h2>
-        </div>
-
-        <div className="tracks-panel">
-          {tracks.map((track) => (
-            <TrackRow key={track.key} label={track.label} trackKey={track.key} players={state} />
-          ))}
-        </div>
-
-        <div className="world-board">
-          <div className="map-surface" aria-hidden="true">
-            <svg
-              className="board-map"
-              viewBox="0 0 1200 700"
-              preserveAspectRatio="xMidYMid meet"
-            >
-              <defs>
-                <linearGradient id="landFill" x1="0%" x2="0%" y1="0%" y2="100%">
-                  <stop offset="0%" stopColor="rgba(214,191,143,0.82)" />
-                  <stop offset="100%" stopColor="rgba(124,98,58,0.88)" />
-                </linearGradient>
-              </defs>
-              <g className="map-routes">
-                <path d="M120 210C260 170 360 185 455 240" />
-                <path d="M470 260C565 235 640 220 760 245" />
-                <path d="M770 250C885 230 980 250 1085 300" />
-                <path d="M300 430C455 400 610 405 815 455" />
-              </g>
-              <g className="map-land">
-                <path d="M106 154l66-34 96 15 57 31 30 37-8 30-40 10-21 40-53 3-18 48-47 10-40-24-10-47-38-21-8-46 34-52z" />
-                <path d="M332 386l42-25 45 19 18 55-25 72-36 65-41-16 7-69-33-41 23-60z" />
-                <path d="M526 153l63-20 101 12 65 22 36 31 0 27-48 12-22 30 22 25-38 24-91 4-67-21-53 11-31-38 19-40 55-23-11-32z" />
-                <path d="M781 178l82-26 99 17 64 43 17 53-43 31-74 3-67 27-18 58-43 16-56-24-27-58 17-55 40-39 9-46z" />
-                <path d="M915 470l55-12 57 20 37 49-18 39-60 16-68-22-35-39 32-51z" />
-              </g>
-            </svg>
-            <div className="grid-lines" />
-          </div>
-
-          {state.map((player) => (
-            <div
-              key={player.id}
-              className={`board-piece ${player.homeClass}${player.id === activePlayerId ? ' active' : ''}`}
-              style={{ '--accent': player.accent }}
-            >
-              <span>{player.shortName}</span>
-              <small>{player.name}</small>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="lower-grid">
-        <div className="selector-panel">
+      <section className="lower-grid overview-grid">
+        <aside className="selector-panel">
           <div className="section-heading">
-            <p className="eyebrow">Perspective switch</p>
-            <h2>Choose which player you are viewing</h2>
-          </div>
-          <div className="player-tabs">
-            {state.map((player) => (
-              <button
-                type="button"
-                key={player.id}
-                className={player.id === activePlayerId ? 'player-tab active' : 'player-tab'}
-                style={{ '--accent': player.accent }}
-                onClick={() => setActivePlayerId(player.id)}
-              >
-                <span>{player.shortName}</span>
-                {player.name}
-              </button>
-            ))}
+            <p className="eyebrow">Create or join</p>
+            <h2>Launch a new game or join with a code</h2>
           </div>
 
-          <div className="event-panel compact">
-            <p className="event-label">Global event</p>
-            <h2>{currentEvent.title}</h2>
-            <p>{currentEvent.text}</p>
-            <p className="mini-label">{supabaseStatus}</p>
-          </div>
-        </div>
+          <form className="form-panel" onSubmit={handleCreateGame}>
+            <label className="form-label" htmlFor="game-name">
+              New game name
+            </label>
+            <input
+              id="game-name"
+              className="input-control"
+              value={createGameName}
+              onChange={(event) => setCreateGameName(event.target.value)}
+              placeholder="Spring strategy session"
+              required
+            />
+            <label className="form-label" htmlFor="create-seat">
+              Claim a seat now
+            </label>
+            <select
+              id="create-seat"
+              className="input-control"
+              value={createSeatKey}
+              onChange={(event) => setCreateSeatKey(event.target.value)}
+            >
+              <option value="">Join as observer</option>
+              {powerOptions.map((power) => (
+                <option key={power.id} value={power.id}>
+                  {power.shortName} / {power.name}
+                </option>
+              ))}
+            </select>
+            <button type="submit" disabled={actionLoading}>
+              {actionLoading ? 'Working...' : 'Create game'}
+            </button>
+          </form>
 
-        <div className="private-panel">
-          <div className="section-heading">
-            <p className="eyebrow">Private area</p>
-            <h2>{activePlayer.name} hand and objective</h2>
-          </div>
+          <form className="form-panel" onSubmit={handleJoinGame}>
+            <label className="form-label" htmlFor="join-code">
+              Join code
+            </label>
+            <input
+              id="join-code"
+              className="input-control code-input"
+              value={joinCode}
+              onChange={(event) => setJoinCode(event.target.value.toUpperCase())}
+              placeholder="ABC123"
+              required
+            />
+            <label className="form-label" htmlFor="join-seat">
+              Claim a seat on join
+            </label>
+            <select
+              id="join-seat"
+              className="input-control"
+              value={joinSeatKey}
+              onChange={(event) => setJoinSeatKey(event.target.value)}
+            >
+              <option value="">Join as observer</option>
+              {powerOptions.map((power) => (
+                <option key={power.id} value={power.id}>
+                  {power.shortName} / {power.name}
+                </option>
+              ))}
+            </select>
+            <button type="submit" disabled={actionLoading}>
+              {actionLoading ? 'Working...' : 'Join game'}
+            </button>
+          </form>
+        </aside>
 
-          <div className="private-objective">
-            <p className="mini-label">Hidden win condition</p>
-            <p>{activePlayer.objective}</p>
+        <section className="board-panel board-panel-wide">
+          <div className="dashboard-stack">
+            <GameList
+              title="Active games"
+              games={activeGames}
+              memberships={memberships}
+              selectedGameId={selectedGameId}
+              onSelect={setSelectedGameId}
+              emptyMessage="No active games yet."
+            />
+            <GameList
+              title="Past games you played"
+              games={pastGames}
+              memberships={memberships}
+              selectedGameId={selectedGameId}
+              onSelect={setSelectedGameId}
+              emptyMessage="Finished games will appear here."
+            />
           </div>
-
-          <div className="hand-grid">
-            {activePlayer.hand.map((card) => {
-              const isSelected = card.name === activePlayer.selectedAction;
-              return (
-                <article key={card.name} className={isSelected ? 'hand-card selected' : 'hand-card'}>
-                  <p className="mini-label">{isSelected ? 'Selected action' : 'Action card'}</p>
-                  <h3>{card.name}</h3>
-                  <p>{card.text}</p>
-                </article>
-              );
-            })}
-          </div>
-        </div>
+        </section>
 
         <aside className="info-panel">
           <div className="section-heading">
-            <p className="eyebrow">Table rhythm</p>
-            <h2>Mocked round flow</h2>
+            <p className="eyebrow">Status</p>
+            <h2>Account and game state</h2>
           </div>
-          <div className="phase-list">
-            {phases.map((phase) => (
-              <article key={phase}>
-                <p>{phase}</p>
-              </article>
-            ))}
-          </div>
-
-          <div className="concealed-panel">
-            <p className="mini-label">Other players</p>
-            {state
-              .filter((player) => player.id !== activePlayerId)
-              .map((player) => (
-                <div className="concealed-row" key={player.id}>
-                  <strong>{player.name}</strong>
-                  <span>Objective hidden / hand hidden</span>
-                </div>
-              ))}
+          <div className="event-panel compact">
+            <p className="event-label">Current status</p>
+            <h2>{activeGame?.status ?? 'No game selected'}</h2>
+            <p>{errorMessage || statusMessage}</p>
+            <p className="mini-label">
+              {activeGame?.join_code ? `Join code: ${activeGame.join_code}` : 'Create or join a game to continue.'}
+            </p>
           </div>
         </aside>
       </section>
+
+      {activeGame && gameState ? (
+        <>
+          <section className="board-panel">
+            <div className="section-heading">
+              <p className="eyebrow">Shared board</p>
+              <h2>Common tracks and central world board</h2>
+            </div>
+
+            <div className="board-toolbar">
+              <div className="game-meta">
+                <span>Round {gameState.round}</span>
+                <span>{currentEvent?.title ?? 'No event loaded'}</span>
+                <span>Join code {activeGame.join_code}</span>
+              </div>
+              <div className="hero-actions">
+                <button type="button" onClick={simulateRound} disabled={!canManageGame || actionLoading}>
+                  Simulate next round
+                </button>
+                {canManageGame ? (
+                  <button type="button" className="ghost" onClick={handleCompleteGame} disabled={actionLoading}>
+                    {activeGame.status === 'completed' ? 'Reopen game' : 'Complete game'}
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="tracks-panel">
+              {tracks.map((track) => (
+                <TrackRow key={track.key} label={track.label} trackKey={track.key} players={boardPlayers} />
+              ))}
+            </div>
+
+            <div className="world-board">
+              <div className="map-surface" aria-hidden="true">
+                <img className="board-map-image" src={worldMap} alt="" />
+                <div className="grid-lines" />
+              </div>
+
+              {boardPlayers.map((player) => (
+                <div
+                  key={player.id}
+                  className={`board-piece ${player.home_class}${player.power_key === activePowerKey ? ' active' : ''}`}
+                  style={{ '--accent': player.accent }}
+                >
+                  <span>{player.short_name}</span>
+                  <small>{player.name}</small>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="lower-grid">
+            <div className="selector-panel">
+              <div className="section-heading">
+                <p className="eyebrow">Perspective</p>
+                <h2>{isAdmin ? 'Switch to any seat' : 'Seats and claims in this game'}</h2>
+              </div>
+              <div className="player-tabs">
+                {(isAdmin ? boardPlayers : availableSeats).map((player) => (
+                  <button
+                    type="button"
+                    key={player.id}
+                    className={player.power_key === activePowerKey ? 'player-tab active' : 'player-tab'}
+                    style={{ '--accent': player.accent }}
+                    onClick={() => setActivePowerKey(player.power_key)}
+                  >
+                    <span>{player.short_name}</span>
+                    {player.name}
+                  </button>
+                ))}
+              </div>
+
+              {!isAdmin && activeGame.status === 'active' ? (
+                <div className="seat-actions">
+                  <p className="mini-label">Claim or change your seat</p>
+                  <div className="seat-list">
+                    {availableSeats.map((player) => (
+                      <button
+                        type="button"
+                        key={player.id}
+                        className="seat-chip"
+                        onClick={() => handleClaimSeat(player.power_key)}
+                        disabled={actionLoading}
+                      >
+                        {player.short_name} / {player.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="event-panel compact">
+                <p className="event-label">Global event</p>
+                <h2>{currentEvent?.title ?? 'No event loaded'}</h2>
+                <p>{currentEvent?.text ?? 'No game event is available for this board yet.'}</p>
+                <p className="mini-label">{activeGame.status}</p>
+              </div>
+            </div>
+
+            <div className="private-panel">
+              <div className="section-heading">
+                <p className="eyebrow">Private area</p>
+                <h2>{activePlayer?.name ?? 'No seat selected'} hand and objective</h2>
+              </div>
+
+              <div className="private-objective">
+                <p className="mini-label">Hidden win condition</p>
+                <p>{privateState.objective || 'This seat has no private objective available for your account.'}</p>
+              </div>
+
+              <div className="hand-grid">
+                {privateState.cards.map((card) => {
+                  const isSelected = card.name === privateState.selectedAction;
+                  return (
+                    <article key={card.name} className={isSelected ? 'hand-card selected' : 'hand-card'}>
+                      <p className="mini-label">{isSelected ? 'Selected action' : 'Action card'}</p>
+                      <h3>{card.name}</h3>
+                      <p>{card.text}</p>
+                    </article>
+                  );
+                })}
+              </div>
+            </div>
+
+            <aside className="info-panel">
+              <div className="section-heading">
+                <p className="eyebrow">Table rhythm</p>
+                <h2>Round flow and seat history</h2>
+              </div>
+              <div className="phase-list">
+                {phases.map((phase) => (
+                  <article key={phase}>
+                    <p>{phase}</p>
+                  </article>
+                ))}
+              </div>
+              <div className="concealed-panel">
+                <p className="mini-label">Seat assignments</p>
+                {(gameState.assignments ?? []).map((assignment) => (
+                  <div className="concealed-row" key={`${assignment.user_id}-${assignment.game_id}`}>
+                    <strong>{assignment.power_key ?? 'observer'}</strong>
+                    <span>{assignment.membership_role}</span>
+                  </div>
+                ))}
+              </div>
+            </aside>
+          </section>
+        </>
+      ) : null}
     </main>
   );
 }
