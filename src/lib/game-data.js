@@ -81,29 +81,37 @@ export const initialPowers = [
   },
 ];
 
+export const phaseOrder = ['choose_actions', 'resolve_event', 'resolve_actions', 'victory_check'];
+
 export const phases = [
-  'Choose 1 action card from hand',
-  'Reveal the round event',
-  'Resolve actions in turn order',
-  'Update shared tracks and check win states',
+  { id: 'choose_actions', label: 'Each player selects one action card.' },
+  { id: 'resolve_event', label: 'One global event is drawn and resolves.' },
+  { id: 'resolve_actions', label: 'Players resolve their chosen action cards in turn order.' },
+  { id: 'victory_check', label: 'Victory is checked before the next round begins.' },
 ];
+
+export const turnOrder = ['us', 'china', 'lab-a', 'lab-b', 'model'];
 
 export const events = [
   {
     title: 'Deepfake Election Crisis',
     text: 'Public trust drops and governments lean harder on safety oversight.',
+    effects: { support: -1, safety: +1 },
   },
   {
     title: 'Global Semiconductor Trade Shock',
     text: 'Capability growth slows while corporate value gets squeezed.',
+    effects: { capabilities: -1, market: -1 },
   },
   {
     title: 'Medical AI Breakthrough',
     text: 'Public support rises as AI delivers a visible social benefit.',
+    effects: { support: +1, market: +1 },
   },
   {
     title: 'Autonomous Weapons Flashpoint',
     text: 'Capability pressure rises while public confidence falls.',
+    effects: { capabilities: +1, support: -1 },
   },
 ];
 
@@ -121,38 +129,129 @@ export const powerOptions = initialPowers.map((power) => ({
   role: power.role,
 }));
 
+const actionEffects = {
+  us: {
+    'Federal AI Package': { self: { capabilities: +1, safety: +1 } },
+    'Export Controls': { targets: [{ powerKey: 'china', deltas: { capabilities: -1 } }], self: { market: -1 } },
+    'Public Oversight Push': { self: { support: +1, capabilities: -1 } },
+  },
+  china: {
+    'Strategic Tech Surge': { self: { capabilities: +1, safety: -1 } },
+    'Propaganda Campaign': { self: { support: +1 }, targets: [{ powerKey: 'us', deltas: { support: -1 } }] },
+    'Researcher Poach': { self: { capabilities: +1 }, targets: [{ group: 'labs', metric: 'capabilities', delta: -1 }] },
+  },
+  'lab-a': {
+    'Flagship Release': { self: { market: +1, capabilities: +1 } },
+    'Safety Team Expansion': { self: { safety: +1, market: -1 } },
+    'Enterprise Alliance': { self: { market: +1, support: +1 } },
+  },
+  'lab-b': {
+    'Research Breakthrough': { self: { capabilities: +1, safety: +1 } },
+    'Benchmark Demo': { self: { support: +1, market: +1 } },
+    'Compute Expansion': { self: { capabilities: +1, support: -1 } },
+  },
+  model: {
+    'Self-Optimization': { self: { capabilities: +1 } },
+    'Helpful Deployment': { self: { support: +1, market: +1 } },
+    'Autonomous Research': { self: { capabilities: +1, safety: -1 } },
+  },
+};
+
 function shiftValue(value, delta) {
   return Math.max(1, Math.min(10, value + delta));
 }
 
-function getDeltas(powerId, eventIndex) {
-  const eventPattern = [
-    { support: -1, safety: +1 },
-    { capabilities: -1, market: -1 },
-    { support: +1, market: +1 },
-    { capabilities: +1, support: -1 },
-  ][eventIndex];
+function applyMeterDeltas(player, deltas) {
+  if (!deltas) {
+    return player;
+  }
 
-  const personalPatterns = {
-    us: { capabilities: +1, safety: +1 },
-    china: { capabilities: +1, safety: -1 },
-    'lab-a': { market: +1, capabilities: +1 },
-    'lab-b': { capabilities: +1, safety: +1 },
-    model: { capabilities: +1 },
-  };
+  const nextMeters = { ...player.meters };
 
-  return { ...eventPattern, ...personalPatterns[powerId] };
+  Object.entries(deltas).forEach(([key, delta]) => {
+    nextMeters[key] = shiftValue(nextMeters[key], delta);
+  });
+
+  return { ...player, meters: nextMeters };
 }
 
-export function applyRound(currentPowers, eventIndex) {
-  return currentPowers.map((power) => {
-    const deltas = getDeltas(power.power_key ?? power.id, eventIndex);
-    const nextMeters = { ...power.meters };
+function getPlayerMap(players) {
+  return new Map(players.map((player) => [player.power_key ?? player.id, player]));
+}
 
-    Object.entries(deltas).forEach(([key, delta]) => {
-      nextMeters[key] = shiftValue(nextMeters[key], delta);
-    });
+export function getCurrentEvent(eventIndex) {
+  return events[eventIndex % events.length] ?? events[0];
+}
 
-    return { ...power, meters: nextMeters };
+export function resolveEvent(players, eventIndex) {
+  const event = getCurrentEvent(eventIndex);
+  return players.map((player) => applyMeterDeltas(player, event.effects));
+}
+
+export function resolveSelectedAction(players, actingPowerKey, selectedAction) {
+  const rules = actionEffects[actingPowerKey]?.[selectedAction];
+
+  if (!rules) {
+    return players;
+  }
+
+  return players.map((player) => {
+    const powerKey = player.power_key ?? player.id;
+    let nextPlayer = player;
+
+    if (powerKey === actingPowerKey) {
+      nextPlayer = applyMeterDeltas(nextPlayer, rules.self);
+    }
+
+    for (const target of rules.targets ?? []) {
+      if (target.powerKey && target.powerKey === powerKey) {
+        nextPlayer = applyMeterDeltas(nextPlayer, target.deltas);
+      }
+
+      if (target.group === 'labs' && (powerKey === 'lab-a' || powerKey === 'lab-b')) {
+        nextPlayer = applyMeterDeltas(nextPlayer, { [target.metric]: target.delta });
+      }
+    }
+
+    return nextPlayer;
   });
+}
+
+export function getSelectedActionByPower(players, resolutionState = {}) {
+  return players.reduce((accumulator, player) => {
+    const powerKey = player.power_key ?? player.id;
+    accumulator[powerKey] = resolutionState[powerKey] ?? player.selected_action ?? '';
+    return accumulator;
+  }, {});
+}
+
+export function checkVictory(players) {
+  const playerMap = getPlayerMap(players);
+  const us = playerMap.get('us');
+  const china = playerMap.get('china');
+  const labA = playerMap.get('lab-a');
+  const labB = playerMap.get('lab-b');
+  const model = playerMap.get('model');
+
+  const winner =
+    (us &&
+      us.meters.capabilities >= 8 &&
+      us.meters.safety >= 6 &&
+      us.meters.support >= 6 &&
+      us) ||
+    (china && us && china.meters.capabilities >= us.meters.capabilities + 2 && china) ||
+    (labA && labB && labA.meters.market >= 9 && labA.meters.capabilities > labB.meters.capabilities && labA) ||
+    (labB && labB.meters.capabilities >= 8 && labA && labB.meters.capabilities > labA.meters.capabilities && labB) ||
+    (model &&
+      model.meters.capabilities >= 9 &&
+      model.meters.safety >= 4 &&
+      model.meters.support >= 4 &&
+      model);
+
+  return winner
+    ? {
+        powerKey: winner.power_key ?? winner.id,
+        name: winner.name,
+      }
+    : null;
 }

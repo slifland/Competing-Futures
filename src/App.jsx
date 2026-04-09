@@ -1,6 +1,16 @@
 import React from 'react';
-import { supabase } from './lib/supabase.js';
-import { applyRound, phases, powerOptions, tracks } from './lib/game-data.js';
+import { supabase, supabaseConfigError } from './lib/supabase.js';
+import {
+  checkVictory,
+  getCurrentEvent,
+  getSelectedActionByPower,
+  phases,
+  powerOptions,
+  resolveEvent,
+  resolveSelectedAction,
+  tracks,
+  turnOrder,
+} from './lib/game-data.js';
 import {
   claimSeat,
   createGame,
@@ -8,10 +18,11 @@ import {
   fetchGameBoard,
   fetchPrivateSeat,
   joinGameByCode,
-  persistRoundState,
+  persistGameFlow,
+  updateSelectedAction,
   updateGameStatus,
 } from './lib/game-api.js';
-import worldMap from '../world.svg';
+import worldMap from './assets/world-map-base.webp';
 
 function TrackRow({ label, trackKey, players }) {
   return (
@@ -68,6 +79,24 @@ function LoginPage({ loading, onLogin, errorMessage }) {
   );
 }
 
+function ConfigErrorPage({ message }) {
+  return (
+    <main className="auth-shell">
+      <section className="auth-panel">
+        <p className="eyebrow">Competing Futures / setup required</p>
+        <h1>Supabase is not configured for this build.</h1>
+        <p className="auth-copy">
+          {message} Add the missing `VITE_*` variables in local `.env` and in the Vercel project
+          settings, then redeploy.
+        </p>
+        <p className="mini-label">
+          Required keys: VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY
+        </p>
+      </section>
+    </main>
+  );
+}
+
 function GameList({ title, games, memberships, selectedGameId, onSelect, emptyMessage }) {
   return (
     <section className="dashboard-section">
@@ -110,6 +139,10 @@ function getDisplayName(profile, user) {
   return profile?.full_name || user?.user_metadata?.full_name || user?.email || 'Unknown player';
 }
 
+function getPhaseDefinition(phaseId) {
+  return phases.find((phase) => phase.id === phaseId) ?? phases[0];
+}
+
 function App() {
   const [authReady, setAuthReady] = React.useState(false);
   const [authLoading, setAuthLoading] = React.useState(false);
@@ -121,6 +154,8 @@ function App() {
   const [selectedGameId, setSelectedGameId] = React.useState('');
   const [refreshKey, setRefreshKey] = React.useState(0);
   const [gameState, setGameState] = React.useState(null);
+  const [selectedActionsBySeat, setSelectedActionsBySeat] = React.useState({});
+  const [waitingOnPlayers, setWaitingOnPlayers] = React.useState([]);
   const [activePowerKey, setActivePowerKey] = React.useState('');
   const [privateState, setPrivateState] = React.useState({ objective: '', selectedAction: '', cards: [] });
   const [createGameName, setCreateGameName] = React.useState('');
@@ -134,6 +169,12 @@ function App() {
     let isMounted = true;
 
     async function loadSession() {
+      if (!supabase) {
+        setErrorMessage(supabaseConfigError);
+        setAuthReady(true);
+        return;
+      }
+
       const {
         data: { session: initialSession },
         error,
@@ -152,6 +193,12 @@ function App() {
     }
 
     loadSession();
+
+    if (!supabase) {
+      return () => {
+        isMounted = false;
+      };
+    }
 
     const {
       data: { subscription },
@@ -178,6 +225,7 @@ function App() {
       setMemberships([]);
       setSelectedGameId('');
       setGameState(null);
+      setSelectedActionsBySeat({});
       setActivePowerKey('');
       setPrivateState({ objective: '', selectedAction: '', cards: [] });
       setStatusMessage(authReady ? 'Sign in to load your game access.' : 'Checking Supabase session...');
@@ -241,7 +289,7 @@ function App() {
     async function loadGame() {
       try {
         setStatusMessage(`Loading ${activeGame.name}...`);
-        const board = await fetchGameBoard(activeGame.id);
+        const board = await fetchGameBoard(activeGame.id, { includePrivateState: canManageGame });
 
         if (!isMounted) {
           return;
@@ -257,7 +305,11 @@ function App() {
           ...board,
           round: activeGame.round,
           eventIndex: activeGame.event_index,
+          phase: activeGame.phase ?? 'choose_actions',
+          currentTurnIndex: activeGame.current_turn_index ?? 0,
+          winnerPowerKey: activeGame.winner_power_key ?? null,
         });
+        setSelectedActionsBySeat(getSelectedActionByPower(board.players));
         setActivePowerKey(nextPowerKey);
         setStatusMessage(`Loaded ${activeGame.name}.`);
       } catch (error) {
@@ -300,6 +352,20 @@ function App() {
         }
 
         setPrivateState(data);
+        setSelectedActionsBySeat((current) => ({
+          ...current,
+          [activePlayer.power_key]: data.selectedAction,
+        }));
+        setGameState((current) =>
+          current
+            ? {
+                ...current,
+                players: current.players.map((player) =>
+                  player.id === activePlayer.id ? { ...player, selected_action: data.selectedAction } : player,
+                ),
+              }
+            : current,
+        );
       } catch (error) {
         if (!isMounted) {
           return;
@@ -319,7 +385,20 @@ function App() {
 
   const boardPlayers = gameState?.players ?? [];
   const activePlayer = boardPlayers.find((player) => player.power_key === activePowerKey) ?? null;
-  const currentEvent = gameState?.events?.[gameState.eventIndex] ?? null;
+  const currentEvent = gameState ? getCurrentEvent(gameState.eventIndex) : null;
+  const currentPhase = gameState?.phase ?? 'choose_actions';
+  const currentPhaseDefinition = getPhaseDefinition(currentPhase);
+  const selectedActionsByPower = React.useMemo(
+    () => ({
+      ...getSelectedActionByPower(boardPlayers),
+      ...selectedActionsBySeat,
+    }),
+    [boardPlayers, selectedActionsBySeat],
+  );
+  const currentTurnPowerKey =
+    currentPhase === 'resolve_actions' ? turnOrder[gameState?.currentTurnIndex ?? 0] ?? null : null;
+  const currentTurnPlayer = boardPlayers.find((player) => player.power_key === currentTurnPowerKey) ?? null;
+  const winner = boardPlayers.find((player) => player.power_key === gameState?.winnerPowerKey) ?? null;
   const takenPowerKeys = new Set(
     (gameState?.assignments ?? [])
       .filter((assignment) => assignment.user_id !== session?.user?.id)
@@ -331,8 +410,19 @@ function App() {
   );
   const activeGames = games.filter((game) => game.status === 'active');
   const pastGames = games.filter((game) => game.status !== 'active');
+  const canEditSeatAction = Boolean(
+    activePlayer &&
+      gameState &&
+      currentPhase === 'choose_actions' &&
+      (isAdmin || activeMembership?.power_key === activePlayer.power_key),
+  );
 
   async function signInWithGoogle() {
+    if (!supabase) {
+      setErrorMessage(supabaseConfigError);
+      return;
+    }
+
     setAuthLoading(true);
     setErrorMessage('');
 
@@ -349,6 +439,11 @@ function App() {
   }
 
   async function signOut() {
+    if (!supabase) {
+      setErrorMessage(supabaseConfigError);
+      return;
+    }
+
     const { error } = await supabase.auth.signOut();
 
     if (error) {
@@ -374,6 +469,7 @@ function App() {
       setStatusMessage('Game created.');
     } catch (error) {
       setErrorMessage(error.message);
+      setStatusMessage(error.message);
     } finally {
       setActionLoading(false);
     }
@@ -436,8 +532,40 @@ function App() {
     }
   }
 
-  async function simulateRound() {
-    if (!canManageGame || !activeGame || !gameState?.players?.length || !gameState.events.length) {
+  async function handleSelectAction(cardName) {
+    if (!canEditSeatAction || !activePlayer) {
+      return;
+    }
+
+    try {
+      setActionLoading(true);
+      setErrorMessage('');
+      await updateSelectedAction(activePlayer.id, cardName);
+      setPrivateState((current) => ({ ...current, selectedAction: cardName }));
+      setSelectedActionsBySeat((current) => ({
+        ...current,
+        [activePlayer.power_key]: cardName,
+      }));
+      setGameState((current) =>
+        current
+          ? {
+              ...current,
+              players: current.players.map((player) =>
+                player.id === activePlayer.id ? { ...player, selected_action: cardName } : player,
+              ),
+            }
+          : current,
+      );
+      setStatusMessage(`Selected ${cardName} for ${activePlayer.name}.`);
+    } catch (error) {
+      setErrorMessage(error.message);
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function handleAdvanceFlow() {
+    if (!canManageGame || !activeGame || !gameState?.players?.length) {
       return;
     }
 
@@ -445,23 +573,101 @@ function App() {
       setActionLoading(true);
       setErrorMessage('');
 
-      const nextEventIndex = (gameState.eventIndex + 1) % gameState.events.length;
-      const nextPlayers = applyRound(gameState.players, nextEventIndex);
-      const nextRound = gameState.round + 1;
+      let nextPlayers = gameState.players;
+      let nextRound = gameState.round;
+      let nextEventIndex = gameState.eventIndex;
+      let nextPhase = currentPhase;
+      let nextTurnIndex = gameState.currentTurnIndex ?? 0;
+      let nextStatus = activeGame.status;
+      let nextWinnerPowerKey = gameState.winnerPowerKey ?? null;
+      let nextStatusMessage = statusMessage;
 
-      await persistRoundState(activeGame.id, nextRound, nextEventIndex, nextPlayers);
+      if (currentPhase === 'choose_actions') {
+        const unresolvedPlayers = turnOrder
+          .map((powerKey) => gameState.players.find((player) => player.power_key === powerKey))
+          .filter(Boolean)
+          .filter((player) => !selectedActionsByPower[player.power_key]);
+
+        if (unresolvedPlayers.length) {
+          setWaitingOnPlayers(unresolvedPlayers);
+          setStatusMessage('Waiting on action choices before the event can be revealed.');
+          if (typeof window !== 'undefined') {
+            window.alert(
+              `Still waiting on action choices from:\n\n${unresolvedPlayers
+                .map((player) => `${player.short_name} — ${player.name}`)
+                .join('\n')}`,
+            );
+          }
+          return;
+        }
+
+        nextPhase = 'resolve_event';
+        nextTurnIndex = 0;
+        nextStatusMessage = `Round ${gameState.round}: ${currentEvent?.title ?? 'Event'} is ready to resolve.`;
+      } else if (currentPhase === 'resolve_event') {
+        nextPlayers = resolveEvent(gameState.players, gameState.eventIndex);
+        nextPhase = 'resolve_actions';
+        nextTurnIndex = 0;
+        nextStatusMessage = `Resolved event for round ${gameState.round}. ${turnOrder.length} actions remain.`;
+      } else if (currentPhase === 'resolve_actions') {
+        if (!currentTurnPlayer) {
+          throw new Error('No current turn player is available for action resolution.');
+        }
+
+        const selectedAction = selectedActionsByPower[currentTurnPlayer.power_key];
+        nextPlayers = resolveSelectedAction(gameState.players, currentTurnPlayer.power_key, selectedAction);
+        nextTurnIndex += 1;
+        nextPhase = nextTurnIndex >= turnOrder.length ? 'victory_check' : 'resolve_actions';
+        nextStatusMessage =
+          nextPhase === 'victory_check'
+            ? 'All actions resolved. Run the victory check.'
+            : `${currentTurnPlayer.name} resolved ${selectedAction}.`;
+      } else if (currentPhase === 'victory_check') {
+        const winningSeat = checkVictory(gameState.players);
+
+        if (winningSeat) {
+          nextPhase = 'victory_check';
+          nextStatus = 'completed';
+          nextWinnerPowerKey = winningSeat.powerKey;
+          nextStatusMessage = `${winningSeat.name} wins the game.`;
+        } else {
+          nextRound = gameState.round + 1;
+          nextEventIndex = (gameState.eventIndex + 1) % gameState.events.length;
+          nextPhase = 'choose_actions';
+          nextTurnIndex = 0;
+          nextWinnerPowerKey = null;
+          nextStatusMessage = `No winner yet. Round ${nextRound} begins.`;
+        }
+      }
+
+      await persistGameFlow(
+        activeGame.id,
+        {
+          round: nextRound,
+          event_index: nextEventIndex,
+          phase: nextPhase,
+          current_turn_index: nextTurnIndex,
+          status: nextStatus,
+          completed_at: nextStatus === 'completed' ? new Date().toISOString() : null,
+          winner_power_key: nextWinnerPowerKey,
+        },
+        nextPlayers,
+      );
 
       setGameState((current) =>
         current
           ? {
               ...current,
+              players: nextPlayers,
               round: nextRound,
               eventIndex: nextEventIndex,
-              players: nextPlayers,
+              phase: nextPhase,
+              currentTurnIndex: nextTurnIndex,
+              winnerPowerKey: nextWinnerPowerKey,
             }
           : current,
       );
-      setStatusMessage(`Saved round ${nextRound} for ${activeGame.name}.`);
+      setStatusMessage(nextStatusMessage);
       setRefreshKey((current) => current + 1);
     } catch (error) {
       setErrorMessage(error.message);
@@ -482,12 +688,43 @@ function App() {
     );
   }
 
+  if (!supabase) {
+    return <ConfigErrorPage message={supabaseConfigError} />;
+  }
+
   if (!session) {
     return <LoginPage loading={authLoading} onLogin={signInWithGoogle} errorMessage={errorMessage} />;
   }
 
   return (
-    <main className="shell">
+    <>
+      {waitingOnPlayers.length ? (
+        <div className="modal-overlay" role="presentation" onClick={() => setWaitingOnPlayers([])}>
+          <section
+            className="modal-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="waiting-on-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <p className="eyebrow">Round gate</p>
+            <h2 id="waiting-on-title">Still waiting on action choices</h2>
+            <p className="modal-copy">Lock actions cannot continue until every player has chosen a card.</p>
+            <div className="modal-list">
+              {waitingOnPlayers.map((player) => (
+                <div key={player.id} className="modal-list-row">
+                  <strong>{player.short_name}</strong>
+                  <span>{player.name}</span>
+                </div>
+              ))}
+            </div>
+            <button type="button" className="auth-button" onClick={() => setWaitingOnPlayers([])}>
+              Close
+            </button>
+          </section>
+        </div>
+      ) : null}
+      <main className="shell">
       <section className="topbar">
         <div className="topbar-copy">
           <p className="eyebrow">Competing Futures / game lobby</p>
@@ -640,12 +877,25 @@ function App() {
             <div className="board-toolbar">
               <div className="game-meta">
                 <span>Round {gameState.round}</span>
-                <span>{currentEvent?.title ?? 'No event loaded'}</span>
+                <span>{currentPhaseDefinition.label}</span>
+                <span>{currentPhase === 'choose_actions' ? 'Event face down' : currentEvent?.title ?? 'No event loaded'}</span>
                 <span>Join code {activeGame.join_code}</span>
               </div>
               <div className="hero-actions">
-                <button type="button" onClick={simulateRound} disabled={!canManageGame || actionLoading}>
-                  Simulate next round
+                <button
+                  type="button"
+                  onClick={handleAdvanceFlow}
+                  disabled={!canManageGame || actionLoading || (currentPhase === 'victory_check' && Boolean(winner))}
+                >
+                  {currentPhase === 'choose_actions'
+                    ? 'Lock actions and reveal event'
+                    : currentPhase === 'resolve_event'
+                      ? 'Resolve global event'
+                      : currentPhase === 'resolve_actions'
+                        ? `Resolve ${currentTurnPlayer?.short_name ?? 'next'} action`
+                        : winner
+                          ? 'Victory locked'
+                          : 'Start next round'}
                 </button>
                 {canManageGame ? (
                   <button type="button" className="ghost" onClick={handleCompleteGame} disabled={actionLoading}>
@@ -666,17 +916,6 @@ function App() {
                 <img className="board-map-image" src={worldMap} alt="" />
                 <div className="grid-lines" />
               </div>
-
-              {boardPlayers.map((player) => (
-                <div
-                  key={player.id}
-                  className={`board-piece ${player.home_class}${player.power_key === activePowerKey ? ' active' : ''}`}
-                  style={{ '--accent': player.accent }}
-                >
-                  <span>{player.short_name}</span>
-                  <small>{player.name}</small>
-                </div>
-              ))}
             </div>
           </section>
 
@@ -747,6 +986,11 @@ function App() {
                       <p className="mini-label">{isSelected ? 'Selected action' : 'Action card'}</p>
                       <h3>{card.name}</h3>
                       <p>{card.text}</p>
+                      {canEditSeatAction ? (
+                        <button type="button" className="hand-action-button" onClick={() => handleSelectAction(card.name)}>
+                          {isSelected ? 'Selected for this round' : 'Choose this action'}
+                        </button>
+                      ) : null}
                     </article>
                   );
                 })}
@@ -760,10 +1004,47 @@ function App() {
               </div>
               <div className="phase-list">
                 {phases.map((phase) => (
-                  <article key={phase}>
-                    <p>{phase}</p>
+                  <article key={phase.id} className={phase.id === currentPhase ? 'active-phase' : ''}>
+                    <p className="mini-label">{phase.id === currentPhase ? 'Current stage' : 'Upcoming stage'}</p>
+                    <p>{phase.label}</p>
                   </article>
                 ))}
+              </div>
+              <div className="concealed-panel">
+                <p className="mini-label">Round state</p>
+                <div className="concealed-row">
+                  <strong>Current phase</strong>
+                  <span>{currentPhaseDefinition.label}</span>
+                </div>
+                <div className="concealed-row">
+                  <strong>Current event</strong>
+                  <span>{currentPhase === 'choose_actions' ? 'Hidden until reveal' : currentEvent?.title ?? 'None'}</span>
+                </div>
+                <div className="concealed-row">
+                  <strong>Current turn</strong>
+                  <span>{currentTurnPlayer ? currentTurnPlayer.name : winner ? winner.name : 'No active turn'}</span>
+                </div>
+                <div className="concealed-row">
+                  <strong>Winner</strong>
+                  <span>{winner?.name ?? 'No winner yet'}</span>
+                </div>
+              </div>
+              <div className="concealed-panel">
+                <p className="mini-label">Chosen actions</p>
+                {turnOrder.map((powerKey) => {
+                  const player = boardPlayers.find((entry) => entry.power_key === powerKey);
+
+                  if (!player) {
+                    return null;
+                  }
+
+                  return (
+                    <div className="concealed-row" key={player.id}>
+                      <strong>{player.short_name}</strong>
+                      <span>{selectedActionsByPower[player.power_key] || 'No action selected'}</span>
+                    </div>
+                  );
+                })}
               </div>
               <div className="concealed-panel">
                 <p className="mini-label">Seat assignments</p>
@@ -778,7 +1059,8 @@ function App() {
           </section>
         </>
       ) : null}
-    </main>
+      </main>
+    </>
   );
 }
 

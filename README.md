@@ -15,6 +15,13 @@ npm install
 npm run dev
 ```
 
+Required environment variables:
+
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY`
+
+Set both in local `.env` and in the Vercel project environment settings before deploying.
+
 ## Auth and roles
 
 This build now expects Supabase Auth plus the follow-up migration in
