@@ -279,6 +279,582 @@ function getPhaseDefinition(phaseId) {
   return phases.find((phase) => phase.id === phaseId) ?? phases[0];
 }
 
+const TRACK_COLUMNS = ['capabilities', 'resources', 'safety', 'publicSupport'];
+const TRACK_SHORT_LABELS = {
+  capabilities: 'Cap',
+  resources: 'Res',
+  safety: 'Safe',
+  publicSupport: 'Support',
+};
+
+function buildDisplayContext(players, selfPowerKey = null) {
+  const playerMap = new Map(players.map((player) => [player.power_key, player]));
+  const labA = playerMap.get('lab-a');
+  const labB = playerMap.get('lab-b');
+
+  return {
+    us: playerMap.get('us'),
+    china: playerMap.get('china'),
+    model: playerMap.get('model'),
+    self: selfPowerKey ? playerMap.get(selfPowerKey) : null,
+    otherLab:
+      selfPowerKey === 'lab-a'
+        ? playerMap.get('lab-b')
+        : selfPowerKey === 'lab-b'
+          ? playerMap.get('lab-a')
+          : null,
+    maxLab: {
+      capabilities: Math.max(labA?.meters.capabilities ?? 0, labB?.meters.capabilities ?? 0),
+      resources: Math.max(labA?.meters.resources ?? 0, labB?.meters.resources ?? 0),
+      safety: Math.max(labA?.meters.safety ?? 0, labB?.meters.safety ?? 0),
+      publicSupport: Math.max(labA?.meters.publicSupport ?? 0, labB?.meters.publicSupport ?? 0),
+    },
+    maxCapabilities: Math.max(...players.map((player) => player.meters.capabilities), 0),
+    maxSafety: Math.max(...players.map((player) => player.meters.safety), 0),
+  };
+}
+
+function evaluateFormulaForDisplay(player, formula) {
+  if (!player || !formula) {
+    return null;
+  }
+
+  const weightedValue = formula.terms.reduce(
+    (sum, term) => sum + (player.meters[term.track] ?? 0) * term.weight,
+    0,
+  );
+
+  return Math.floor(formula.base - formula.difficulty * weightedValue);
+}
+
+function getRollSuccessChance(threshold) {
+  if (threshold == null) {
+    return null;
+  }
+
+  let wins = 0;
+  for (let roll = 1; roll <= 10; roll += 1) {
+    if (roll >= threshold) {
+      wins += 1;
+    }
+  }
+  return wins / 10;
+}
+
+function formatPercent(value) {
+  if (value == null || Number.isNaN(value)) {
+    return 'N/A';
+  }
+
+  return `${Math.round(value * 100)}%`;
+}
+
+function parseObjectiveText(objectiveText) {
+  if (!objectiveText) {
+    return null;
+  }
+
+  const sections = objectiveText.split('\n\n');
+  const title = sections[0] ?? '';
+  const description = sections[1] ?? '';
+  const outcomeLine = sections.find((section) => section.startsWith('Outcome: ')) ?? '';
+  const conditionsBlock = sections.find((section) => section.startsWith('Conditions:')) ?? '';
+
+  return {
+    title,
+    description,
+    outcome: outcomeLine.replace('Outcome: ', ''),
+    conditions: conditionsBlock
+      .split('\n')
+      .slice(1)
+      .map((line) => line.replace(/^- /, '').trim())
+      .filter(Boolean),
+  };
+}
+
+function evaluateObjectiveCondition(condition, players, activePowerKey) {
+  const ctx = buildDisplayContext(players, activePowerKey);
+  const self = ctx.self;
+  const checks = [
+    {
+      match: /^Max Frontier Lab Capabilities >= (\d+)$/,
+      get: ([, value]) => ({
+        met: ctx.maxLab.capabilities >= Number(value),
+        current: `${ctx.maxLab.capabilities} / ${value}`,
+      }),
+    },
+    {
+      match: /^Max Frontier Lab Resources <= (\d+)$/,
+      get: ([, value]) => ({
+        met: ctx.maxLab.resources <= Number(value),
+        current: `${ctx.maxLab.resources} / ${value}`,
+      }),
+    },
+    {
+      match: /^Government Safety Investment >= (\d+)$/,
+      get: ([, value]) => ({
+        met: (ctx.us?.meters.safety ?? 0) >= Number(value),
+        current: `${ctx.us?.meters.safety ?? 0} / ${value}`,
+      }),
+    },
+    {
+      match: /^US Resources > China Resources OR US Resources = 10$/,
+      get: () => ({
+        met:
+          (ctx.us?.meters.resources ?? 0) > (ctx.china?.meters.resources ?? 0) ||
+          (ctx.us?.meters.resources ?? 0) === 10,
+        current: `${ctx.us?.meters.resources ?? 0} vs ${ctx.china?.meters.resources ?? 0}`,
+      }),
+    },
+    {
+      match: /^US Resources >= (\d+)$/,
+      get: ([, value]) => ({
+        met: (ctx.us?.meters.resources ?? 0) >= Number(value),
+        current: `${ctx.us?.meters.resources ?? 0} / ${value}`,
+      }),
+    },
+    {
+      match: /^US Public Support > China Public Support OR US Public Support = 10$/,
+      get: () => ({
+        met:
+          (ctx.us?.meters.publicSupport ?? 0) > (ctx.china?.meters.publicSupport ?? 0) ||
+          (ctx.us?.meters.publicSupport ?? 0) === 10,
+        current: `${ctx.us?.meters.publicSupport ?? 0} vs ${ctx.china?.meters.publicSupport ?? 0}`,
+      }),
+    },
+    {
+      match: /^US Public Support >= (\d+)$/,
+      get: ([, value]) => ({
+        met: (ctx.us?.meters.publicSupport ?? 0) >= Number(value),
+        current: `${ctx.us?.meters.publicSupport ?? 0} / ${value}`,
+      }),
+    },
+    {
+      match: /^Max Frontier Lab Capabilities > China Capabilities OR Max Frontier Lab Capabilities = 10$/,
+      get: () => ({
+        met:
+          ctx.maxLab.capabilities > (ctx.china?.meters.capabilities ?? 0) || ctx.maxLab.capabilities === 10,
+        current: `${ctx.maxLab.capabilities} vs ${ctx.china?.meters.capabilities ?? 0}`,
+      }),
+    },
+    {
+      match: /^Max Capabilities >= (\d+)$/,
+      get: ([, value]) => ({
+        met: ctx.maxCapabilities >= Number(value),
+        current: `${ctx.maxCapabilities} / ${value}`,
+      }),
+    },
+    {
+      match: /^Max Safety > Max Capabilities$/,
+      get: () => ({
+        met: ctx.maxSafety > ctx.maxCapabilities,
+        current: `${ctx.maxSafety} vs ${ctx.maxCapabilities}`,
+      }),
+    },
+    {
+      match: /^Max Safety > Max Capabilities OR Max Safety = 10$/,
+      get: () => ({
+        met: ctx.maxSafety > ctx.maxCapabilities || ctx.maxSafety === 10,
+        current: `${ctx.maxSafety} vs ${ctx.maxCapabilities}`,
+      }),
+    },
+    {
+      match: /^China Capabilities >= (\d+)$/,
+      get: ([, value]) => ({
+        met: (ctx.china?.meters.capabilities ?? 0) >= Number(value),
+        current: `${ctx.china?.meters.capabilities ?? 0} / ${value}`,
+      }),
+    },
+    {
+      match: /^China Safety >= (\d+)$/,
+      get: ([, value]) => ({
+        met: (ctx.china?.meters.safety ?? 0) >= Number(value),
+        current: `${ctx.china?.meters.safety ?? 0} / ${value}`,
+      }),
+    },
+    {
+      match: /^China Capabilities > Max Frontier Lab Capabilities OR China Capabilities = 10$/,
+      get: () => ({
+        met:
+          (ctx.china?.meters.capabilities ?? 0) > ctx.maxLab.capabilities ||
+          (ctx.china?.meters.capabilities ?? 0) === 10,
+        current: `${ctx.china?.meters.capabilities ?? 0} vs ${ctx.maxLab.capabilities}`,
+      }),
+    },
+    {
+      match: /^China Capabilities >= Max Frontier Lab Capabilities OR China Capabilities = 10$/,
+      get: () => ({
+        met:
+          (ctx.china?.meters.capabilities ?? 0) >= ctx.maxLab.capabilities ||
+          (ctx.china?.meters.capabilities ?? 0) === 10,
+        current: `${ctx.china?.meters.capabilities ?? 0} vs ${ctx.maxLab.capabilities}`,
+      }),
+    },
+    {
+      match: /^China Resources > US Resources OR China Resources = 10$/,
+      get: () => ({
+        met:
+          (ctx.china?.meters.resources ?? 0) > (ctx.us?.meters.resources ?? 0) ||
+          (ctx.china?.meters.resources ?? 0) === 10,
+        current: `${ctx.china?.meters.resources ?? 0} vs ${ctx.us?.meters.resources ?? 0}`,
+      }),
+    },
+    {
+      match: /^China Resources >= (\d+)$/,
+      get: ([, value]) => ({
+        met: (ctx.china?.meters.resources ?? 0) >= Number(value),
+        current: `${ctx.china?.meters.resources ?? 0} / ${value}`,
+      }),
+    },
+    {
+      match: /^China Public Support >= (\d+)$/,
+      get: ([, value]) => ({
+        met: (ctx.china?.meters.publicSupport ?? 0) >= Number(value),
+        current: `${ctx.china?.meters.publicSupport ?? 0} / ${value}`,
+      }),
+    },
+    {
+      match: /^Capabilities >= (\d+)$/,
+      get: ([, value]) => ({
+        met: (self?.meters.capabilities ?? 0) >= Number(value),
+        current: `${self?.meters.capabilities ?? 0} / ${value}`,
+      }),
+    },
+    {
+      match: /^Resources >= (\d+)$/,
+      get: ([, value]) => ({
+        met: (self?.meters.resources ?? 0) >= Number(value),
+        current: `${self?.meters.resources ?? 0} / ${value}`,
+      }),
+    },
+    {
+      match: /^Resources > (\d+)$/,
+      get: ([, value]) => ({
+        met: (self?.meters.resources ?? 0) > Number(value),
+        current: `${self?.meters.resources ?? 0} / ${Number(value) + 1}+`,
+      }),
+    },
+    {
+      match: /^Safety >= (\d+)$/,
+      get: ([, value]) => ({
+        met: (self?.meters.safety ?? 0) >= Number(value),
+        current: `${self?.meters.safety ?? 0} / ${value}`,
+      }),
+    },
+    {
+      match: /^Safety > (\d+)$/,
+      get: ([, value]) => ({
+        met: (self?.meters.safety ?? 0) > Number(value),
+        current: `${self?.meters.safety ?? 0} / ${Number(value) + 1}+`,
+      }),
+    },
+    {
+      match: /^Public Support >= (\d+)$/,
+      get: ([, value]) => ({
+        met: (self?.meters.publicSupport ?? 0) >= Number(value),
+        current: `${self?.meters.publicSupport ?? 0} / ${value}`,
+      }),
+    },
+    {
+      match: /^Safety > Capabilities$/,
+      get: () => ({
+        met: (self?.meters.safety ?? 0) > (self?.meters.capabilities ?? 0),
+        current: `${self?.meters.safety ?? 0} vs ${self?.meters.capabilities ?? 0}`,
+      }),
+    },
+    {
+      match: /^Capabilities > Safety$/,
+      get: () => ({
+        met: (self?.meters.capabilities ?? 0) > (self?.meters.safety ?? 0),
+        current: `${self?.meters.capabilities ?? 0} vs ${self?.meters.safety ?? 0}`,
+      }),
+    },
+    {
+      match: /^Capabilities > Chinese Capabilities OR Capabilities = 10$/,
+      get: () => ({
+        met:
+          (self?.meters.capabilities ?? 0) > (ctx.china?.meters.capabilities ?? 0) ||
+          (self?.meters.capabilities ?? 0) === 10,
+        current: `${self?.meters.capabilities ?? 0} vs ${ctx.china?.meters.capabilities ?? 0}`,
+      }),
+    },
+    {
+      match: /^Capabilities - Other Lab Capabilities >= 2 OR Capabilities = 10$/,
+      get: () => ({
+        met:
+          (self?.meters.capabilities ?? 0) - (ctx.otherLab?.meters.capabilities ?? 0) >= 2 ||
+          (self?.meters.capabilities ?? 0) === 10,
+        current: `${self?.meters.capabilities ?? 0} vs ${ctx.otherLab?.meters.capabilities ?? 0}`,
+      }),
+    },
+    {
+      match: /^Capabilities - China Capabilities >= 2 OR Capabilities = 10$/,
+      get: () => ({
+        met:
+          (self?.meters.capabilities ?? 0) - (ctx.china?.meters.capabilities ?? 0) >= 2 ||
+          (self?.meters.capabilities ?? 0) === 10,
+        current: `${self?.meters.capabilities ?? 0} vs ${ctx.china?.meters.capabilities ?? 0}`,
+      }),
+    },
+    {
+      match: /^Resources > Other Lab Resources OR Resources = 10$/,
+      get: () => ({
+        met:
+          (self?.meters.resources ?? 0) > (ctx.otherLab?.meters.resources ?? 0) ||
+          (self?.meters.resources ?? 0) === 10,
+        current: `${self?.meters.resources ?? 0} vs ${ctx.otherLab?.meters.resources ?? 0}`,
+      }),
+    },
+    {
+      match: /^Assigned on turn four/,
+      get: () => ({
+        met: false,
+        current: 'Reveals later',
+      }),
+    },
+  ];
+
+  for (const check of checks) {
+    const matched = condition.match(check.match);
+    if (matched) {
+      return { label: condition, ...check.get(matched) };
+    }
+  }
+
+  return { label: condition, met: false, current: 'Unavailable' };
+}
+
+function getObjectiveRollSummary(parsedObjective, activePlayer, players, objectiveEligible) {
+  if (!parsedObjective || !activePlayer) {
+    return { label: 'No objective loaded', chance: null };
+  }
+
+  if (!objectiveEligible) {
+    return { label: 'Conditions not met', chance: 0 };
+  }
+
+  if (parsedObjective.outcome === 'Automatic Victory') {
+    return { label: 'Automatic win', chance: 1 };
+  }
+
+  if (parsedObjective.outcome === 'Roll For Safety') {
+    const safety = activePlayer.meters.safety ?? 0;
+    return { label: `Roll <= Safety ${safety}`, chance: safety / 10 };
+  }
+
+  if (parsedObjective.outcome === 'Roll Safety Against Capabilities') {
+    const model = players.find((player) => player.power_key === 'model');
+    const target = Math.max(0, Math.min(10, 6 - (model?.meters.capabilities ?? 0) + (activePlayer.meters.safety ?? 0)));
+    return { label: `Roll <= ${target}`, chance: target / 10 };
+  }
+
+  return { label: parsedObjective.outcome, chance: null };
+}
+
+function getRequirementState(cardDefinition, players, currentEvent) {
+  if (!cardDefinition) {
+    return null;
+  }
+
+  const model = players.find((player) => player.power_key === 'model');
+  const negativeEvents = new Set([
+    'china-invades-taiwan',
+    'china-steals-model-weights',
+    'deepfake-election-crisis',
+    'ubi-implemented',
+    'pandemic-pathogen',
+    'cyber-attack',
+    'semiconductor-trade-war',
+    'labs-nationalized',
+    'ai-whistleblower',
+    'singularity',
+  ]);
+
+  if (cardDefinition.key === 'positive-crisis-response') {
+    const met =
+      negativeEvents.has(currentEvent?.key) && (model?.meters.capabilities ?? 0) >= 3;
+    return {
+      label: 'Negative event this round + Model Cap >= 3',
+      met,
+    };
+  }
+
+  if (cardDefinition.key === 'value-lock-in') {
+    const met = (model?.meters.safety ?? 0) >= 5;
+    return {
+      label: 'Model Safety >= 5',
+      met,
+    };
+  }
+
+  return null;
+}
+
+function expandEffectTargets(effect, actingPowerKey, payload, players) {
+  const playerMap = new Map(players.map((player) => [player.power_key, player]));
+  const nameFor = (powerKey) => playerMap.get(powerKey)?.short_name ?? powerKey;
+
+  if (effect.target === 'self') {
+    return [actingPowerKey];
+  }
+
+  if (effect.target === 'target' && payload?.targetActorKey) {
+    return [payload.targetActorKey];
+  }
+
+  if (effect.target === 'targets') {
+    return payload?.targetActorKeys ?? [];
+  }
+
+  if (effect.target === 'actors') {
+    return effect.actorKeys ?? [];
+  }
+
+  if (effect.target === 'all') {
+    return players.map((player) => player.power_key);
+  }
+
+  if (effect.target === 'all_except_self') {
+    return players.map((player) => player.power_key).filter((powerKey) => powerKey !== actingPowerKey);
+  }
+
+  if (effect.target === 'labs') {
+    return ['lab-a', 'lab-b'];
+  }
+
+  if (effect.target === 'labs_except_self') {
+    return ['lab-a', 'lab-b'].filter((powerKey) => powerKey !== actingPowerKey);
+  }
+
+  if (effect.target === 'other-lab') {
+    return actingPowerKey === 'lab-a' ? ['lab-b'] : actingPowerKey === 'lab-b' ? ['lab-a'] : [];
+  }
+
+  return effect.actorKeys?.map(nameFor) ?? [];
+}
+
+function buildOutcomeRows(cardDefinition, actingPowerKey, payload, players) {
+  if (!cardDefinition) {
+    return { success: [], failure: [], notes: [] };
+  }
+
+  const builtOutcome = cardDefinition.buildOutcome?.(payload, players) ?? {};
+  const rows = { success: [], failure: [], notes: [] };
+
+  const accumulate = (bucket, effectList) => {
+    const map = new Map();
+    for (const effect of effectList ?? []) {
+      const targets = expandEffectTargets(effect, actingPowerKey, payload, players);
+      for (const powerKey of targets) {
+        const label = players.find((player) => player.power_key === powerKey)?.short_name ?? powerKey;
+        if (!map.has(label)) {
+          map.set(label, { label, deltas: {} });
+        }
+        const row = map.get(label);
+        for (const trackKey of TRACK_COLUMNS) {
+          row.deltas[trackKey] = (row.deltas[trackKey] ?? 0) + (effect.deltas?.[trackKey] ?? 0);
+        }
+      }
+    }
+    rows[bucket] = Array.from(map.values());
+  };
+
+  if (builtOutcome.special === 'espionage') {
+    rows.success = [
+      { label: players.find((player) => player.power_key === actingPowerKey)?.short_name ?? 'Self', deltas: { capabilities: 1, resources: -1 } },
+      { label: players.find((player) => player.power_key === payload?.targetActorKey)?.short_name ?? 'Target', deltas: { capabilities: -1 } },
+    ];
+    rows.failure = [
+      { label: players.find((player) => player.power_key === actingPowerKey)?.short_name ?? 'Self', deltas: { resources: -1 } },
+    ];
+    rows.notes.push('On success, detection risk is 50% and costs an extra -2 Support.');
+    return rows;
+  }
+
+  if (builtOutcome.special === 'positive_crisis_response') {
+    rows.success = [
+      { label: 'AI', deltas: { publicSupport: 3, safety: 1 } },
+    ];
+    rows.failure = [
+      { label: 'AI', deltas: { publicSupport: -1 } },
+    ];
+    rows.notes.push('Only converts to the success row if this round’s event is negative and AI Cap is at least 3.');
+    return rows;
+  }
+
+  if (builtOutcome.special === 'emergent_behavior') {
+    rows.success = [
+      { label: 'AI', deltas: { capabilities: 2 } },
+    ];
+    rows.failure = [];
+    rows.notes.push('Successful resolution branches 50/50 into beneficial (+1 AI Safety, +1 Support to everyone) or dangerous (-2 AI Safety, -1 Support to everyone, US +1 Safety).');
+    return rows;
+  }
+
+  if (builtOutcome.special === 'deceptive_alignment') {
+    rows.success = [
+      { label: 'AI', deltas: { capabilities: 2, publicSupport: 1, safety: -3 } },
+    ];
+    rows.failure = [
+      { label: 'AI', deltas: { publicSupport: -2, safety: -1 } },
+    ];
+    rows.notes.push('The -3 Safety is hidden until regulation or audit exposes it.');
+    return rows;
+  }
+
+  if (builtOutcome.special === 'value_lock_in') {
+    rows.success = [
+      { label: 'AI', deltas: { safety: 3, publicSupport: 2, capabilities: -1 } },
+      { label: 'All', deltas: { safety: 1 } },
+    ];
+    rows.failure = [
+      { label: 'AI', deltas: { resources: -1 } },
+    ];
+    rows.notes.push('Requires AI Safety at 5 or above to access the success outcome.');
+    return rows;
+  }
+
+  accumulate('success', builtOutcome.success);
+  accumulate('failure', builtOutcome.failure);
+  return rows;
+}
+
+function OutcomeTable({ title, rows, emptyLabel = 'No change', tone = 'success' }) {
+  return (
+    <div className={`outcome-panel ${tone}`}>
+      <div className="outcome-header">
+        <strong>{title}</strong>
+        <span>{rows.length ? `${rows.length} actor${rows.length === 1 ? '' : 's'}` : emptyLabel}</span>
+      </div>
+      {rows.length ? (
+        <div className="outcome-table">
+          <div className="outcome-table-head">
+            <span>Actor</span>
+            {TRACK_COLUMNS.map((trackKey) => (
+              <span key={trackKey}>{TRACK_SHORT_LABELS[trackKey]}</span>
+            ))}
+          </div>
+          {rows.map((row) => (
+            <div className="outcome-table-row" key={row.label}>
+              <strong>{row.label}</strong>
+              {TRACK_COLUMNS.map((trackKey) => {
+                const value = row.deltas?.[trackKey] ?? 0;
+                return (
+                  <span key={trackKey} className={value > 0 ? 'delta-positive' : value < 0 ? 'delta-negative' : 'delta-neutral'}>
+                    {value === 0 ? '—' : `${value > 0 ? '+' : ''}${value}`}
+                  </span>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="outcome-empty">{emptyLabel}</p>
+      )}
+    </div>
+  );
+}
+
 function App() {
   const [authReady, setAuthReady] = React.useState(false);
   const [authLoading, setAuthLoading] = React.useState(false);
@@ -612,6 +1188,17 @@ function App() {
   );
   const objectiveEligible = Boolean(
     activePlayer && isObjectiveEligible(boardPlayers, activePlayer.power_key, privateState.secretState),
+  );
+  const parsedObjective = parseObjectiveText(privateState.objective);
+  const objectiveChecks = parsedObjective?.conditions?.map((condition) =>
+    evaluateObjectiveCondition(condition, boardPlayers, activePowerKey),
+  ) ?? [];
+  const objectiveMetCount = objectiveChecks.filter((check) => check.met).length;
+  const objectiveRollSummary = getObjectiveRollSummary(
+    parsedObjective,
+    activePlayer,
+    boardPlayers,
+    objectiveEligible,
   );
 
   const selectedCardKeysByPower = React.useMemo(() => {
@@ -1217,8 +1804,49 @@ function App() {
                 </div>
 
                 <div className="private-objective">
-                  <p className="mini-label">Hidden win condition</p>
-                  <p>{privateState.objective || 'This seat has no private objective available for your account.'}</p>
+                  <div className="objective-topline">
+                    <div>
+                      <p className="mini-label">Hidden win condition</p>
+                      <h3>{parsedObjective?.title ?? 'No objective loaded'}</h3>
+                    </div>
+                    <div className="objective-scorecard">
+                      <strong>{parsedObjective ? `${objectiveMetCount}/${objectiveChecks.length}` : '0/0'}</strong>
+                      <span>criteria met</span>
+                    </div>
+                  </div>
+                  <p>{parsedObjective?.description ?? 'This seat has no private objective available for your account.'}</p>
+                  {parsedObjective ? (
+                    <div className="objective-summary-grid">
+                      <div className="objective-summary-card">
+                        <span className="mini-label">Victory path</span>
+                        <strong>{parsedObjective.outcome}</strong>
+                        <small>{objectiveRollSummary.label}</small>
+                      </div>
+                      <div className="objective-summary-card">
+                        <span className="mini-label">Win odds now</span>
+                        <strong>{formatPercent(objectiveRollSummary.chance)}</strong>
+                        <small>{objectiveEligible ? 'Based on current board state' : 'Blocked until all criteria are met'}</small>
+                      </div>
+                    </div>
+                  ) : null}
+                  {objectiveChecks.length ? (
+                    <div className="criteria-table">
+                      <div className="criteria-table-head">
+                        <span>Condition</span>
+                        <span>Current</span>
+                        <span>Status</span>
+                      </div>
+                      {objectiveChecks.map((check) => (
+                        <div className="criteria-table-row" key={check.label}>
+                          <strong>{check.label}</strong>
+                          <span>{check.current}</span>
+                          <span className={check.met ? 'status-pill met' : 'status-pill unmet'}>
+                            {check.met ? 'Met' : 'Miss'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                   {currentPhase === 'victory_check' ? (
                     <p className="mini-label">
                       {objectiveEligible ? 'Objective conditions met.' : 'Objective conditions not met.'}
@@ -1242,7 +1870,56 @@ function App() {
                       <article key={card.cardKey} className={isSelected ? 'hand-card selected' : 'hand-card'}>
                         <p className="mini-label">{isSelected ? 'Selected action' : 'Action card'}</p>
                         <h3>{card.name}</h3>
-                        <p>{card.text}</p>
+                        {(() => {
+                          const successThreshold = evaluateFormulaForDisplay(activePlayer, cardDefinition?.formula);
+                          const rollSuccessChance = getRollSuccessChance(successThreshold);
+                          const requirementState = getRequirementState(cardDefinition, boardPlayers, currentEvent);
+                          const effectiveChance =
+                            requirementState && !requirementState.met ? 0 : rollSuccessChance;
+                          const outcomeRows = buildOutcomeRows(
+                            cardDefinition,
+                            activePowerKey,
+                            cardDrafts[card.cardKey] ?? buildDefaultSelectionPayload(cardDefinition, activePowerKey),
+                            boardPlayers,
+                          );
+
+                          return (
+                            <>
+                              <div className="odds-strip">
+                                <div className="odds-stat primary">
+                                  <span className="mini-label">Success odds</span>
+                                  <strong>{formatPercent(effectiveChance)}</strong>
+                                  <small>
+                                    {successThreshold != null ? `Need d10 roll >= ${successThreshold}` : 'No roll data'}
+                                  </small>
+                                </div>
+                                <div className="odds-stat">
+                                  <span className="mini-label">Base roll</span>
+                                  <strong>{formatPercent(rollSuccessChance)}</strong>
+                                  <small>From current track values</small>
+                                </div>
+                                {requirementState ? (
+                                  <div className={requirementState.met ? 'odds-stat requirement met' : 'odds-stat requirement blocked'}>
+                                    <span className="mini-label">Requirement</span>
+                                    <strong>{requirementState.met ? 'Live' : 'Blocked'}</strong>
+                                    <small>{requirementState.label}</small>
+                                  </div>
+                                ) : null}
+                              </div>
+                              <div className="card-impact-grid">
+                                <OutcomeTable title="Success" rows={outcomeRows.success} tone="success" />
+                                <OutcomeTable title="Failure" rows={outcomeRows.failure} emptyLabel="No penalty" tone="failure" />
+                              </div>
+                              {outcomeRows.notes.length ? (
+                                <div className="impact-notes">
+                                  {outcomeRows.notes.map((note) => (
+                                    <p key={note}>{note}</p>
+                                  ))}
+                                </div>
+                              ) : null}
+                            </>
+                          );
+                        })()}
                         {canEditSeatAction ? (
                           <ActionSelectionFields
                             card={card}
