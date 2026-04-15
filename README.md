@@ -24,8 +24,10 @@ Set both in local `.env` and in the Vercel project environment settings before d
 
 ## Auth and roles
 
-This build now expects Supabase Auth plus the follow-up migration in
-[supabase/migrations/20260327_auth_profiles_and_memberships.sql](/Users/sethlifland/dev/Competing-Futures/supabase/migrations/20260327_auth_profiles_and_memberships.sql).
+This build now expects Supabase Auth plus the follow-up migrations in
+[supabase/migrations/20260327_auth_profiles_and_memberships.sql](/Users/sethlifland/dev/Competing-Futures/supabase/migrations/20260327_auth_profiles_and_memberships.sql),
+[supabase/migrations/20260408_game_flow_state.sql](/Users/sethlifland/dev/Competing-Futures/supabase/migrations/20260408_game_flow_state.sql), and
+[supabase/migrations/20260415_rules_engine_refresh.sql](/Users/sethlifland/dev/Competing-Futures/supabase/migrations/20260415_rules_engine_refresh.sql).
 
 What it adds:
 
@@ -49,11 +51,11 @@ Supabase dashboard setup still required:
 
 ## Current scope
 
-This build is intentionally a mockup:
+The app now follows the Google Doc ruleset instead of the original placeholder logic:
 
-- five playable powers are visible at once
-- each power has one representative action card
-- round flow and global events are simulated locally
-- private objectives are shown as placeholder win pressure text
-
-The next layer would be wiring turns, auth if needed, and persisted game state to Supabase.
+- track start states match the `Rules` tab and use `0..10` bounds
+- each actor has a real deck, a hidden hand, and a hidden endgame objective
+- event draw uses the quadrant-weighted probabilities from the doc
+- action order comes from the hidden event card for the round
+- action cards resolve with the doc formulas, success/failure paths, and most card-specific choices
+- victory uses hidden declarations, the doc’s endgame rolls, the path-dependent Frontier AI rule, and the final tiebreak ladder

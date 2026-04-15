@@ -1,3 +1,10 @@
+import {
+  RULES_VERSION,
+  buildGameInitialization,
+  buildManagerState,
+  hydratePrivateStateForSeat,
+  serializeManagerState,
+} from './game-data.js';
 import { supabase, supabaseConfigError } from './supabase.js';
 
 function getSupabaseClient() {
@@ -42,6 +49,18 @@ function getSchemaSetupError(error) {
     );
   }
 
+  if (
+    message.includes('engine_state') ||
+    message.includes('selected_card_key') ||
+    message.includes('selected_action_payload') ||
+    message.includes('secret_state') ||
+    message.includes('card_key')
+  ) {
+    return new Error(
+      'The rules-engine migration is missing in Supabase. Run supabase/migrations/20260415_rules_engine_refresh.sql and refresh.',
+    );
+  }
+
   return error;
 }
 
@@ -51,24 +70,44 @@ function isMissingGameFlowColumnError(error) {
   return (
     message.includes('games.phase') ||
     message.includes('games.current_turn_index') ||
-    message.includes('games.winner_power_key')
+    message.includes('games.winner_power_key') ||
+    message.includes('games.engine_state')
   );
 }
 
 function getGameFlowSetupError(error) {
   if (isMissingGameFlowColumnError(error)) {
     return new Error(
-      'Game flow columns are missing in Supabase. Run supabase/migrations/20260408_game_flow_state.sql and refresh.',
+      'Game flow columns are missing in Supabase. Run supabase/migrations/20260408_game_flow_state.sql and supabase/migrations/20260415_rules_engine_refresh.sql, then refresh.',
     );
   }
 
-  return error;
+  return getSchemaSetupError(error);
 }
 
-function isMissingSelectedActionRpcError(error) {
+function isMissingTurnSelectionRpcError(error) {
   const message = error?.message ?? '';
 
-  return message.includes('update_selected_action') && message.includes('does not exist');
+  return message.includes('update_turn_selection') && message.includes('does not exist');
+}
+
+function isMissingVictoryDeclarationRpcError(error) {
+  const message = error?.message ?? '';
+
+  return message.includes('set_victory_declaration') && message.includes('does not exist');
+}
+
+function mapDbPlayer(player) {
+  return {
+    ...player,
+    selected_action: player.selected_action ?? '',
+    meters: {
+      capabilities: player.capabilities,
+      resources: player.market,
+      safety: player.safety,
+      publicSupport: player.support,
+    },
+  };
 }
 
 export async function fetchAccountContext(user) {
@@ -94,14 +133,14 @@ export async function fetchAccountContext(user) {
   const gamesWithFlow = await client
     .from('games')
     .select(
-      'id, name, status, join_code, created_by, round, event_index, phase, current_turn_index, winner_power_key, created_at, updated_at, completed_at',
+      'id, name, status, join_code, created_by, round, phase, current_turn_index, winner_power_key, engine_state, created_at, updated_at, completed_at',
     )
     .order('updated_at', { ascending: false });
 
   if (gamesWithFlow.error && isMissingGameFlowColumnError(gamesWithFlow.error)) {
     const legacyGames = await client
       .from('games')
-      .select('id, name, status, join_code, created_by, round, event_index, created_at, updated_at, completed_at')
+      .select('id, name, status, join_code, created_by, round, created_at, updated_at, completed_at')
       .order('updated_at', { ascending: false });
 
     gamesData =
@@ -110,6 +149,7 @@ export async function fetchAccountContext(user) {
         phase: 'choose_actions',
         current_turn_index: 0,
         winner_power_key: null,
+        engine_state: {},
       })) ?? [];
     gamesError = legacyGames.error;
   } else {
@@ -123,7 +163,11 @@ export async function fetchAccountContext(user) {
 
   return {
     profile: normalizeProfile(user, profileData),
-    games: gamesData ?? [],
+    games:
+      (gamesData ?? []).map((game) => ({
+        ...game,
+        engineState: game.engine_state ?? {},
+      })) ?? [],
     memberships: membershipsData ?? [],
   };
 }
@@ -131,51 +175,53 @@ export async function fetchAccountContext(user) {
 export async function fetchGameBoard(gameId, options = {}) {
   const client = getSupabaseClient();
   const includePrivateState = options.includePrivateState ?? false;
+
+  const playersQuery = client
+    .from('players')
+    .select('id, game_id, power_key, name, short_name, accent, role, home_class, capabilities, safety, market, support')
+    .eq('game_id', gameId)
+    .order('name');
+
+  const membershipsQuery = client
+    .from('game_memberships')
+    .select('game_id, user_id, membership_role, power_key, updated_at')
+    .eq('game_id', gameId);
+
+  const privateStateQuery = includePrivateState
+    ? client
+        .from('player_private_state')
+        .select(
+          'player_id, objective, selected_action, selected_card_key, selected_action_payload, declared_victory, secret_state',
+        )
+        .like('player_id', `${gameId}-%`)
+    : Promise.resolve({ data: [], error: null });
+
+  const handQuery = includePrivateState
+    ? client
+        .from('player_cards')
+        .select('player_id, position, card_key, name, text')
+        .like('player_id', `${gameId}-%`)
+        .order('position')
+    : Promise.resolve({ data: [], error: null });
+
   const [
     { data: playersData, error: playersError },
-    { data: eventsData, error: eventsError },
     { data: membershipsData, error: membershipsError },
-    resolutionResult,
-  ] = await Promise.all([
-    client
-      .from('players')
-      .select('id, game_id, power_key, name, short_name, accent, role, home_class, capabilities, safety, market, support')
-      .eq('game_id', gameId)
-      .order('name'),
-    client.from('events').select('sort_order, title, text').eq('game_id', gameId).order('sort_order'),
-    client
-      .from('game_memberships')
-      .select('game_id, user_id, membership_role, power_key, updated_at')
-      .eq('game_id', gameId),
-    includePrivateState
-      ? client.from('player_private_state').select('player_id, selected_action').like('player_id', `${gameId}-%`)
-      : Promise.resolve({ data: [], error: null }),
-  ]);
+    privateStateResult,
+    handResult,
+  ] = await Promise.all([playersQuery, membershipsQuery, privateStateQuery, handQuery]);
 
-  const { data: resolutionRows, error: resolutionError } = resolutionResult;
+  const { data: privateStateRows, error: privateStateError } = privateStateResult;
+  const { data: handRows, error: handError } = handResult;
 
-  if (playersError || eventsError || membershipsError || resolutionError) {
-    throw playersError || eventsError || membershipsError || resolutionError;
+  if (playersError || membershipsError || privateStateError || handError) {
+    throw getSchemaSetupError(playersError || membershipsError || privateStateError || handError);
   }
 
-  const selectedActionsByPlayerId = new Map(
-    (resolutionRows ?? []).map((row) => [row.player_id, row.selected_action]),
-  );
-
   return {
-    players:
-      (playersData ?? []).map((player) => ({
-        ...player,
-        selected_action: selectedActionsByPlayerId.get(player.id) ?? '',
-        meters: {
-          capabilities: player.capabilities,
-          safety: player.safety,
-          market: player.market,
-          support: player.support,
-        },
-      })) ?? [],
-    events: eventsData ?? [],
+    players: (playersData ?? []).map(mapDbPlayer),
     assignments: membershipsData ?? [],
+    managerState: includePrivateState ? buildManagerState(privateStateRows ?? [], handRows ?? []) : null,
   };
 }
 
@@ -185,19 +231,21 @@ export async function fetchPrivateSeat(playerId) {
     { data: secretData, error: secretError },
     { data: cardsData, error: cardsError },
   ] = await Promise.all([
-    client.from('player_private_state').select('objective, selected_action').eq('player_id', playerId).maybeSingle(),
-    client.from('player_cards').select('position, name, text').eq('player_id', playerId).order('position'),
+    client
+      .from('player_private_state')
+      .select(
+        'objective, selected_action, selected_card_key, selected_action_payload, declared_victory, secret_state',
+      )
+      .eq('player_id', playerId)
+      .maybeSingle(),
+    client.from('player_cards').select('position, card_key, name, text').eq('player_id', playerId).order('position'),
   ]);
 
   if (secretError || cardsError) {
-    throw secretError || cardsError;
+    throw getSchemaSetupError(secretError || cardsError);
   }
 
-  return {
-    objective: secretData?.objective ?? '',
-    selectedAction: secretData?.selected_action ?? '',
-    cards: cardsData ?? [],
-  };
+  return hydratePrivateStateForSeat(secretData, cardsData ?? []);
 }
 
 export async function createGame(gameName, seatPowerKey) {
@@ -214,28 +262,73 @@ export async function createGame(gameName, seatPowerKey) {
   return data;
 }
 
-export async function updateSelectedAction(playerId, selectedAction) {
+export async function initializeGameFromRules(gameId) {
   const client = getSupabaseClient();
-  const rpcResult = await client.rpc('update_selected_action', {
+  const { data: playersData, error: playersError } = await client
+    .from('players')
+    .select('id, game_id, power_key, name, short_name, accent, role, home_class, capabilities, safety, market, support')
+    .eq('game_id', gameId)
+    .order('name');
+
+  if (playersError) {
+    throw getSchemaSetupError(playersError);
+  }
+
+  const initialized = buildGameInitialization((playersData ?? []).map(mapDbPlayer));
+
+  await persistGameState({
+    gameId,
+    gameUpdate: {
+      round: 1,
+      phase: 'choose_actions',
+      current_turn_index: 0,
+      winner_power_key: null,
+      status: 'active',
+      completed_at: null,
+      engine_state: initialized.engineState,
+    },
+    players: initialized.players,
+    managerState: buildManagerState(initialized.privateStates, initialized.handRows),
+  });
+}
+
+export async function updateTurnSelection(playerId, selectedCardKey, selectedAction, selectedActionPayload) {
+  const client = getSupabaseClient();
+  const rpcResult = await client.rpc('update_turn_selection', {
     target_player_id_input: playerId,
+    selected_card_key_input: selectedCardKey,
     selected_action_input: selectedAction,
+    selected_action_payload_input: selectedActionPayload ?? {},
   });
 
   if (!rpcResult.error) {
     return;
   }
 
-  if (isMissingSelectedActionRpcError(rpcResult.error)) {
-    const { error: fallbackError } = await client
-      .from('player_private_state')
-      .update({ selected_action: selectedAction })
-      .eq('player_id', playerId);
+  if (isMissingTurnSelectionRpcError(rpcResult.error)) {
+    throw new Error(
+      'The turn-selection RPC is missing in Supabase. Run supabase/migrations/20260415_rules_engine_refresh.sql and refresh.',
+    );
+  }
 
-    if (!fallbackError) {
-      return;
-    }
+  throw rpcResult.error;
+}
 
-    throw fallbackError;
+export async function setVictoryDeclaration(playerId, declaredVictory) {
+  const client = getSupabaseClient();
+  const rpcResult = await client.rpc('set_victory_declaration', {
+    target_player_id_input: playerId,
+    declared_input: declaredVictory,
+  });
+
+  if (!rpcResult.error) {
+    return;
+  }
+
+  if (isMissingVictoryDeclarationRpcError(rpcResult.error)) {
+    throw new Error(
+      'The victory-declaration RPC is missing in Supabase. Run supabase/migrations/20260415_rules_engine_refresh.sql and refresh.',
+    );
   }
 
   throw rpcResult.error;
@@ -283,7 +376,7 @@ export async function updateGameStatus(gameId, status) {
   }
 }
 
-export async function persistGameFlow(gameId, gameUpdate, players) {
+export async function persistGameState({ gameId, gameUpdate, players, managerState }) {
   const client = getSupabaseClient();
   const { error: gameError } = await client.from('games').update(gameUpdate).eq('id', gameId);
 
@@ -295,15 +388,52 @@ export async function persistGameFlow(gameId, gameUpdate, players) {
     const { error: playerError } = await client
       .from('players')
       .update({
+        name: player.name,
+        short_name: player.short_name ?? player.shortName,
+        accent: player.accent,
+        role: player.role,
+        home_class: player.home_class ?? player.homeClass,
         capabilities: player.meters.capabilities,
         safety: player.meters.safety,
-        market: player.meters.market,
-        support: player.meters.support,
+        market: player.meters.resources,
+        support: player.meters.publicSupport,
       })
       .eq('id', player.id);
 
     if (playerError) {
-      throw playerError;
+      throw getSchemaSetupError(playerError);
     }
   }
+
+  if (!managerState) {
+    return;
+  }
+
+  const serialized = serializeManagerState(managerState);
+
+  const { error: privateStateError } = await client
+    .from('player_private_state')
+    .upsert(serialized.privateStates, { onConflict: 'player_id' });
+
+  if (privateStateError) {
+    throw getSchemaSetupError(privateStateError);
+  }
+
+  const { error: deleteCardsError } = await client.from('player_cards').delete().like('player_id', `${gameId}-%`);
+
+  if (deleteCardsError) {
+    throw getSchemaSetupError(deleteCardsError);
+  }
+
+  if (serialized.handRows.length) {
+    const { error: insertCardsError } = await client.from('player_cards').insert(serialized.handRows);
+
+    if (insertCardsError) {
+      throw getSchemaSetupError(insertCardsError);
+    }
+  }
+}
+
+export function gameNeedsRulesInitialization(activeGame) {
+  return activeGame?.engineState?.rulesVersion !== RULES_VERSION;
 }

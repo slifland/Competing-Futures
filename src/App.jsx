@@ -1,13 +1,15 @@
 import React from 'react';
 import { supabase, supabaseConfigError } from './lib/supabase.js';
 import {
-  checkVictory,
+  advanceGameState,
+  buildDefaultSelectionPayload,
+  getActionCard,
+  getBaseCardKey,
   getCurrentEvent,
-  getSelectedActionByPower,
+  isObjectiveEligible,
   phases,
   powerOptions,
-  resolveEvent,
-  resolveSelectedAction,
+  sanitizeSelectionPayload,
   tracks,
   turnOrder,
 } from './lib/game-data.js';
@@ -17,10 +19,13 @@ import {
   fetchAccountContext,
   fetchGameBoard,
   fetchPrivateSeat,
+  gameNeedsRulesInitialization,
+  initializeGameFromRules,
   joinGameByCode,
-  persistGameFlow,
-  updateSelectedAction,
+  persistGameState,
+  setVictoryDeclaration,
   updateGameStatus,
+  updateTurnSelection,
 } from './lib/game-api.js';
 import worldMap from './assets/world-map-base.webp';
 
@@ -29,11 +34,11 @@ function TrackRow({ label, trackKey, players }) {
     <div className="track-row">
       <div className="track-title">
         <span>{label}</span>
-        <small>1-10 shared board track</small>
+        <small>0-10 influence track</small>
       </div>
       <div className="track-cells" role="img" aria-label={`${label} shared track`}>
-        {Array.from({ length: 10 }, (_, index) => {
-          const value = index + 1;
+        {Array.from({ length: 11 }, (_, index) => {
+          const value = index;
           const occupants = players.filter((player) => player.meters[trackKey] === value);
 
           return (
@@ -135,6 +140,137 @@ function GameList({ title, games, memberships, selectedGameId, onSelect, emptyMe
   );
 }
 
+function ActionSelectionFields({ card, players, value, onChange }) {
+  const cardDefinition = getActionCard(card.definitionKey ?? getBaseCardKey(card.cardKey));
+  const selection = cardDefinition?.selection;
+
+  if (!selection) {
+    return null;
+  }
+
+  const options = (selection.options ?? []).map((powerKey) => ({
+    powerKey,
+    label: players.find((player) => player.power_key === powerKey)?.name ?? powerKey,
+  }));
+
+  if (selection.kind === 'target') {
+    return (
+      <label className="form-label">
+        Target
+        <select
+          className="input-control"
+          value={value?.targetActorKey ?? ''}
+          onChange={(event) => onChange({ ...value, targetActorKey: event.target.value })}
+        >
+          {options.map((option) => (
+            <option key={option.powerKey} value={option.powerKey}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </label>
+    );
+  }
+
+  if (selection.kind === 'targets') {
+    const targets = value?.targetActorKeys ?? [];
+    return (
+      <div className="form-panel">
+        <label className="form-label">
+          First target
+          <select
+            className="input-control"
+            value={targets[0] ?? options[0]?.powerKey ?? ''}
+            onChange={(event) =>
+              onChange({
+                ...value,
+                targetActorKeys: [event.target.value, targets[1] ?? options[1]?.powerKey ?? options[0]?.powerKey],
+              })
+            }
+          >
+            {options.map((option) => (
+              <option key={option.powerKey} value={option.powerKey}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="form-label">
+          Second target
+          <select
+            className="input-control"
+            value={targets[1] ?? options[1]?.powerKey ?? options[0]?.powerKey ?? ''}
+            onChange={(event) =>
+              onChange({
+                ...value,
+                targetActorKeys: [targets[0] ?? options[0]?.powerKey, event.target.value],
+              })
+            }
+          >
+            {options.map((option) => (
+              <option key={option.powerKey} value={option.powerKey}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+    );
+  }
+
+  if (selection.kind === 'allocation') {
+    const capabilityPoints = Number(value?.capabilityPoints ?? 1);
+    return (
+      <label className="form-label">
+        Capability allocation
+        <select
+          className="input-control"
+          value={capabilityPoints}
+          onChange={(event) => onChange({ ...value, capabilityPoints: Number(event.target.value) })}
+        >
+          <option value={0}>0 to Capabilities / 2 to Safety</option>
+          <option value={1}>1 to Capabilities / 1 to Safety</option>
+          <option value={2}>2 to Capabilities / 0 to Safety</option>
+        </select>
+      </label>
+    );
+  }
+
+  if (selection.kind === 'target_and_axis') {
+    return (
+      <div className="form-panel">
+        <label className="form-label">
+          Target lab
+          <select
+            className="input-control"
+            value={value?.targetActorKey ?? options[0]?.powerKey ?? ''}
+            onChange={(event) => onChange({ ...value, targetActorKey: event.target.value })}
+          >
+            {options.map((option) => (
+              <option key={option.powerKey} value={option.powerKey}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="form-label">
+          Track
+          <select
+            className="input-control"
+            value={value?.track ?? 'capabilities'}
+            onChange={(event) => onChange({ ...value, track: event.target.value })}
+          >
+            <option value="capabilities">Capabilities</option>
+            <option value="safety">Safety</option>
+          </select>
+        </label>
+      </div>
+    );
+  }
+
+  return null;
+}
+
 function getDisplayName(profile, user) {
   return profile?.full_name || user?.user_metadata?.full_name || user?.email || 'Unknown player';
 }
@@ -154,10 +290,18 @@ function App() {
   const [selectedGameId, setSelectedGameId] = React.useState('');
   const [refreshKey, setRefreshKey] = React.useState(0);
   const [gameState, setGameState] = React.useState(null);
-  const [selectedActionsBySeat, setSelectedActionsBySeat] = React.useState({});
   const [waitingOnPlayers, setWaitingOnPlayers] = React.useState([]);
   const [activePowerKey, setActivePowerKey] = React.useState('');
-  const [privateState, setPrivateState] = React.useState({ objective: '', selectedAction: '', cards: [] });
+  const [privateState, setPrivateState] = React.useState({
+    objective: '',
+    selectedAction: '',
+    selectedCardKey: '',
+    selectedActionPayload: {},
+    declaredVictory: false,
+    secretState: {},
+    cards: [],
+  });
+  const [cardDrafts, setCardDrafts] = React.useState({});
   const [createGameName, setCreateGameName] = React.useState('');
   const [createSeatKey, setCreateSeatKey] = React.useState('');
   const [joinCode, setJoinCode] = React.useState('');
@@ -225,9 +369,16 @@ function App() {
       setMemberships([]);
       setSelectedGameId('');
       setGameState(null);
-      setSelectedActionsBySeat({});
       setActivePowerKey('');
-      setPrivateState({ objective: '', selectedAction: '', cards: [] });
+      setPrivateState({
+        objective: '',
+        selectedAction: '',
+        selectedCardKey: '',
+        selectedActionPayload: {},
+        declaredVictory: false,
+        secretState: {},
+        cards: [],
+      });
       setStatusMessage(authReady ? 'Sign in to load your game access.' : 'Checking Supabase session...');
       return;
     }
@@ -270,7 +421,7 @@ function App() {
     return () => {
       isMounted = false;
     };
-  }, [authReady, refreshKey, session?.user]);
+  }, [authReady, refreshKey, selectedGameId, session?.user]);
 
   const activeGame = games.find((game) => game.id === selectedGameId) ?? null;
   const activeMembership = memberships.find((membership) => membership.game_id === selectedGameId) ?? null;
@@ -289,6 +440,16 @@ function App() {
     async function loadGame() {
       try {
         setStatusMessage(`Loading ${activeGame.name}...`);
+
+        if (canManageGame && gameNeedsRulesInitialization(activeGame)) {
+          setStatusMessage(`Reinitializing ${activeGame.name} with the Google Doc rules...`);
+          await initializeGameFromRules(activeGame.id);
+          if (isMounted) {
+            setRefreshKey((current) => current + 1);
+          }
+          return;
+        }
+
         const board = await fetchGameBoard(activeGame.id, { includePrivateState: canManageGame });
 
         if (!isMounted) {
@@ -304,12 +465,11 @@ function App() {
         setGameState({
           ...board,
           round: activeGame.round,
-          eventIndex: activeGame.event_index,
           phase: activeGame.phase ?? 'choose_actions',
           currentTurnIndex: activeGame.current_turn_index ?? 0,
           winnerPowerKey: activeGame.winner_power_key ?? null,
+          engineState: activeGame.engineState ?? {},
         });
-        setSelectedActionsBySeat(getSelectedActionByPower(board.players));
         setActivePowerKey(nextPowerKey);
         setStatusMessage(`Loaded ${activeGame.name}.`);
       } catch (error) {
@@ -326,18 +486,40 @@ function App() {
     return () => {
       isMounted = false;
     };
-  }, [activeGame, activeMembership?.power_key, isAdmin, refreshKey, session?.user]);
+  }, [activeGame, activeMembership?.power_key, activePowerKey, canManageGame, isAdmin, session?.user]);
+
+  const boardPlayers = gameState?.players ?? [];
+  const activePlayer = boardPlayers.find((player) => player.power_key === activePowerKey) ?? null;
 
   React.useEffect(() => {
     if (!session?.user || !gameState || !activePowerKey) {
-      setPrivateState({ objective: '', selectedAction: '', cards: [] });
+      setPrivateState({
+        objective: '',
+        selectedAction: '',
+        selectedCardKey: '',
+        selectedActionPayload: {},
+        declaredVictory: false,
+        secretState: {},
+        cards: [],
+      });
       return;
     }
 
-    const activePlayer = gameState.players.find((player) => player.power_key === activePowerKey);
+    if (canManageGame && gameState.managerState?.[activePowerKey]) {
+      const managedSeat = gameState.managerState[activePowerKey];
+      setPrivateState({
+        objective: managedSeat.objective ?? '',
+        selectedAction: managedSeat.selectedAction ?? '',
+        selectedCardKey: managedSeat.selectedCardKey ?? '',
+        selectedActionPayload: managedSeat.selectedActionPayload ?? {},
+        declaredVictory: Boolean(managedSeat.declaredVictory),
+        secretState: managedSeat.secretState ?? {},
+        cards: managedSeat.hand ?? [],
+      });
+      return;
+    }
 
     if (!activePlayer) {
-      setPrivateState({ objective: '', selectedAction: '', cards: [] });
       return;
     }
 
@@ -352,26 +534,20 @@ function App() {
         }
 
         setPrivateState(data);
-        setSelectedActionsBySeat((current) => ({
-          ...current,
-          [activePlayer.power_key]: data.selectedAction,
-        }));
-        setGameState((current) =>
-          current
-            ? {
-                ...current,
-                players: current.players.map((player) =>
-                  player.id === activePlayer.id ? { ...player, selected_action: data.selectedAction } : player,
-                ),
-              }
-            : current,
-        );
       } catch (error) {
         if (!isMounted) {
           return;
         }
 
-        setPrivateState({ objective: '', selectedAction: '', cards: [] });
+        setPrivateState({
+          objective: '',
+          selectedAction: '',
+          selectedCardKey: '',
+          selectedActionPayload: {},
+          declaredVictory: false,
+          secretState: {},
+          cards: [],
+        });
         setErrorMessage(error.message);
       }
     }
@@ -381,24 +557,38 @@ function App() {
     return () => {
       isMounted = false;
     };
-  }, [activePowerKey, gameState, refreshKey, session?.user]);
+  }, [activePlayer?.id, activePowerKey, canManageGame, gameState, session?.user]);
 
-  const boardPlayers = gameState?.players ?? [];
-  const activePlayer = boardPlayers.find((player) => player.power_key === activePowerKey) ?? null;
-  const currentEvent = gameState ? getCurrentEvent(gameState.eventIndex) : null;
+  React.useEffect(() => {
+    if (!activePowerKey || !privateState.cards.length) {
+      setCardDrafts({});
+      return;
+    }
+
+    setCardDrafts(
+      privateState.cards.reduce((accumulator, card) => {
+        const cardDefinition = getActionCard(card.definitionKey ?? getBaseCardKey(card.cardKey));
+        const sourcePayload =
+          privateState.selectedCardKey === card.cardKey
+            ? privateState.selectedActionPayload
+            : buildDefaultSelectionPayload(cardDefinition, activePowerKey);
+
+        accumulator[card.cardKey] = sanitizeSelectionPayload(cardDefinition, sourcePayload, activePowerKey);
+        return accumulator;
+      }, {}),
+    );
+  }, [activePowerKey, privateState.cards, privateState.selectedActionPayload, privateState.selectedCardKey]);
+
   const currentPhase = gameState?.phase ?? 'choose_actions';
   const currentPhaseDefinition = getPhaseDefinition(currentPhase);
-  const selectedActionsByPower = React.useMemo(
-    () => ({
-      ...getSelectedActionByPower(boardPlayers),
-      ...selectedActionsBySeat,
-    }),
-    [boardPlayers, selectedActionsBySeat],
-  );
+  const currentEvent = getCurrentEvent({ phase: currentPhase, engineState: gameState?.engineState ?? {} });
+  const currentOrder = gameState?.engineState?.actionOrder ?? turnOrder;
   const currentTurnPowerKey =
-    currentPhase === 'resolve_actions' ? turnOrder[gameState?.currentTurnIndex ?? 0] ?? null : null;
+    currentPhase === 'resolve_actions' ? currentOrder[gameState?.currentTurnIndex ?? 0] ?? null : null;
   const currentTurnPlayer = boardPlayers.find((player) => player.power_key === currentTurnPowerKey) ?? null;
   const winner = boardPlayers.find((player) => player.power_key === gameState?.winnerPowerKey) ?? null;
+  const revealedActions = gameState?.engineState?.revealedActions ?? {};
+  const publicLog = gameState?.engineState?.publicLog ?? [];
   const takenPowerKeys = new Set(
     (gameState?.assignments ?? [])
       .filter((assignment) => assignment.user_id !== session?.user?.id)
@@ -412,10 +602,33 @@ function App() {
   const pastGames = games.filter((game) => game.status !== 'active');
   const canEditSeatAction = Boolean(
     activePlayer &&
-      gameState &&
       currentPhase === 'choose_actions' &&
       (isAdmin || activeMembership?.power_key === activePlayer.power_key),
   );
+  const canEditVictory = Boolean(
+    activePlayer &&
+      currentPhase === 'victory_check' &&
+      (isAdmin || activeMembership?.power_key === activePlayer.power_key),
+  );
+  const objectiveEligible = Boolean(
+    activePlayer && isObjectiveEligible(boardPlayers, activePlayer.power_key, privateState.secretState),
+  );
+
+  const selectedCardKeysByPower = React.useMemo(() => {
+    const next = {};
+
+    if (gameState?.managerState) {
+      for (const powerKey of turnOrder) {
+        next[powerKey] = gameState.managerState[powerKey]?.selectedCardKey ?? '';
+      }
+    }
+
+    if (activePowerKey) {
+      next[activePowerKey] = privateState.selectedCardKey ?? next[activePowerKey] ?? '';
+    }
+
+    return next;
+  }, [activePowerKey, gameState?.managerState, privateState.selectedCardKey]);
 
   async function signInWithGoogle() {
     if (!supabase) {
@@ -462,11 +675,12 @@ function App() {
       setActionLoading(true);
       setErrorMessage('');
       const gameId = await createGame(createGameName.trim(), createSeatKey);
+      await initializeGameFromRules(gameId);
       setCreateGameName('');
       setCreateSeatKey('');
       setSelectedGameId(gameId);
       setRefreshKey((current) => current + 1);
-      setStatusMessage('Game created.');
+      setStatusMessage('Game created with the Rules-tab ruleset.');
     } catch (error) {
       setErrorMessage(error.message);
       setStatusMessage(error.message);
@@ -532,7 +746,7 @@ function App() {
     }
   }
 
-  async function handleSelectAction(cardName) {
+  async function handleSelectAction(card) {
     if (!canEditSeatAction || !activePlayer) {
       return;
     }
@@ -540,23 +754,67 @@ function App() {
     try {
       setActionLoading(true);
       setErrorMessage('');
-      await updateSelectedAction(activePlayer.id, cardName);
-      setPrivateState((current) => ({ ...current, selectedAction: cardName }));
-      setSelectedActionsBySeat((current) => ({
+      const cardDefinition = getActionCard(card.definitionKey ?? getBaseCardKey(card.cardKey));
+      const payload = sanitizeSelectionPayload(cardDefinition, cardDrafts[card.cardKey], activePowerKey);
+      await updateTurnSelection(activePlayer.id, card.cardKey, card.name, payload);
+
+      setPrivateState((current) => ({
         ...current,
-        [activePlayer.power_key]: cardName,
+        selectedAction: card.name,
+        selectedCardKey: card.cardKey,
+        selectedActionPayload: payload,
       }));
+
       setGameState((current) =>
-        current
+        current && current.managerState?.[activePowerKey]
           ? {
               ...current,
-              players: current.players.map((player) =>
-                player.id === activePlayer.id ? { ...player, selected_action: cardName } : player,
-              ),
+              managerState: {
+                ...current.managerState,
+                [activePowerKey]: {
+                  ...current.managerState[activePowerKey],
+                  selectedAction: card.name,
+                  selectedCardKey: card.cardKey,
+                  selectedActionPayload: payload,
+                },
+              },
             }
           : current,
       );
-      setStatusMessage(`Selected ${cardName} for ${activePlayer.name}.`);
+
+      setStatusMessage(`Locked ${card.name} for ${activePlayer.name}.`);
+    } catch (error) {
+      setErrorMessage(error.message);
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function handleVictoryToggle(declared) {
+    if (!canEditVictory || !activePlayer) {
+      return;
+    }
+
+    try {
+      setActionLoading(true);
+      setErrorMessage('');
+      await setVictoryDeclaration(activePlayer.id, declared);
+      setPrivateState((current) => ({ ...current, declaredVictory: declared }));
+      setGameState((current) =>
+        current && current.managerState?.[activePowerKey]
+          ? {
+              ...current,
+              managerState: {
+                ...current.managerState,
+                [activePowerKey]: {
+                  ...current.managerState[activePowerKey],
+                  declaredVictory: declared,
+                },
+              },
+            }
+          : current,
+      );
+      setStatusMessage(declared ? 'Victory attempt declared.' : 'Victory attempt withdrawn.');
     } catch (error) {
       setErrorMessage(error.message);
     } finally {
@@ -565,7 +823,7 @@ function App() {
   }
 
   async function handleAdvanceFlow() {
-    if (!canManageGame || !activeGame || !gameState?.players?.length) {
+    if (!canManageGame || !activeGame || !gameState?.players?.length || !gameState?.managerState) {
       return;
     }
 
@@ -573,101 +831,69 @@ function App() {
       setActionLoading(true);
       setErrorMessage('');
 
-      let nextPlayers = gameState.players;
-      let nextRound = gameState.round;
-      let nextEventIndex = gameState.eventIndex;
-      let nextPhase = currentPhase;
-      let nextTurnIndex = gameState.currentTurnIndex ?? 0;
-      let nextStatus = activeGame.status;
-      let nextWinnerPowerKey = gameState.winnerPowerKey ?? null;
-      let nextStatusMessage = statusMessage;
+      const nextState = advanceGameState({
+        players: gameState.players,
+        managerState: gameState.managerState,
+        phase: currentPhase,
+        round: gameState.round,
+        currentTurnIndex: gameState.currentTurnIndex ?? 0,
+        engineState: gameState.engineState ?? {},
+      });
 
-      if (currentPhase === 'choose_actions') {
-        const unresolvedPlayers = turnOrder
-          .map((powerKey) => gameState.players.find((player) => player.power_key === powerKey))
-          .filter(Boolean)
-          .filter((player) => !selectedActionsByPower[player.power_key]);
-
-        if (unresolvedPlayers.length) {
-          setWaitingOnPlayers(unresolvedPlayers);
-          setStatusMessage('Waiting on action choices before the event can be revealed.');
-          if (typeof window !== 'undefined') {
-            window.alert(
-              `Still waiting on action choices from:\n\n${unresolvedPlayers
-                .map((player) => `${player.short_name} — ${player.name}`)
-                .join('\n')}`,
-            );
-          }
-          return;
-        }
-
-        nextPhase = 'resolve_event';
-        nextTurnIndex = 0;
-        nextStatusMessage = `Round ${gameState.round}: ${currentEvent?.title ?? 'Event'} is ready to resolve.`;
-      } else if (currentPhase === 'resolve_event') {
-        nextPlayers = resolveEvent(gameState.players, gameState.eventIndex);
-        nextPhase = 'resolve_actions';
-        nextTurnIndex = 0;
-        nextStatusMessage = `Resolved event for round ${gameState.round}. ${turnOrder.length} actions remain.`;
-      } else if (currentPhase === 'resolve_actions') {
-        if (!currentTurnPlayer) {
-          throw new Error('No current turn player is available for action resolution.');
-        }
-
-        const selectedAction = selectedActionsByPower[currentTurnPlayer.power_key];
-        nextPlayers = resolveSelectedAction(gameState.players, currentTurnPlayer.power_key, selectedAction);
-        nextTurnIndex += 1;
-        nextPhase = nextTurnIndex >= turnOrder.length ? 'victory_check' : 'resolve_actions';
-        nextStatusMessage =
-          nextPhase === 'victory_check'
-            ? 'All actions resolved. Run the victory check.'
-            : `${currentTurnPlayer.name} resolved ${selectedAction}.`;
-      } else if (currentPhase === 'victory_check') {
-        const winningSeat = checkVictory(gameState.players);
-
-        if (winningSeat) {
-          nextPhase = 'victory_check';
-          nextStatus = 'completed';
-          nextWinnerPowerKey = winningSeat.powerKey;
-          nextStatusMessage = `${winningSeat.name} wins the game.`;
-        } else {
-          nextRound = gameState.round + 1;
-          nextEventIndex = (gameState.eventIndex + 1) % gameState.events.length;
-          nextPhase = 'choose_actions';
-          nextTurnIndex = 0;
-          nextWinnerPowerKey = null;
-          nextStatusMessage = `No winner yet. Round ${nextRound} begins.`;
-        }
+      if (nextState.blocked?.length) {
+        setWaitingOnPlayers(
+          nextState.blocked
+            .map((powerKey) => boardPlayers.find((player) => player.power_key === powerKey))
+            .filter(Boolean),
+        );
+        setStatusMessage('Waiting on action choices before the event can be revealed.');
+        return;
       }
 
-      await persistGameFlow(
-        activeGame.id,
-        {
-          round: nextRound,
-          event_index: nextEventIndex,
-          phase: nextPhase,
-          current_turn_index: nextTurnIndex,
-          status: nextStatus,
-          completed_at: nextStatus === 'completed' ? new Date().toISOString() : null,
-          winner_power_key: nextWinnerPowerKey,
+      await persistGameState({
+        gameId: activeGame.id,
+        gameUpdate: {
+          round: nextState.round,
+          phase: nextState.phase,
+          current_turn_index: nextState.currentTurnIndex,
+          status: nextState.status,
+          completed_at: nextState.status === 'completed' ? new Date().toISOString() : null,
+          winner_power_key: nextState.winnerPowerKey,
+          engine_state: nextState.engineState,
         },
-        nextPlayers,
-      );
+        players: nextState.players,
+        managerState: nextState.managerState,
+      });
 
       setGameState((current) =>
         current
           ? {
               ...current,
-              players: nextPlayers,
-              round: nextRound,
-              eventIndex: nextEventIndex,
-              phase: nextPhase,
-              currentTurnIndex: nextTurnIndex,
-              winnerPowerKey: nextWinnerPowerKey,
+              players: nextState.players,
+              managerState: nextState.managerState,
+              round: nextState.round,
+              phase: nextState.phase,
+              currentTurnIndex: nextState.currentTurnIndex,
+              winnerPowerKey: nextState.winnerPowerKey,
+              engineState: nextState.engineState,
             }
           : current,
       );
-      setStatusMessage(nextStatusMessage);
+
+      if (activePowerKey && nextState.managerState?.[activePowerKey]) {
+        const managedSeat = nextState.managerState[activePowerKey];
+        setPrivateState({
+          objective: managedSeat.objective ?? '',
+          selectedAction: managedSeat.selectedAction ?? '',
+          selectedCardKey: managedSeat.selectedCardKey ?? '',
+          selectedActionPayload: managedSeat.selectedActionPayload ?? {},
+          declaredVictory: Boolean(managedSeat.declaredVictory),
+          secretState: managedSeat.secretState ?? {},
+          cards: managedSeat.hand ?? [],
+        });
+      }
+
+      setStatusMessage(nextState.statusMessage);
       setRefreshKey((current) => current + 1);
     } catch (error) {
       setErrorMessage(error.message);
@@ -709,7 +935,7 @@ function App() {
           >
             <p className="eyebrow">Round gate</p>
             <h2 id="waiting-on-title">Still waiting on action choices</h2>
-            <p className="modal-copy">Lock actions cannot continue until every player has chosen a card.</p>
+            <p className="modal-copy">The Rules-tab flow cannot advance until every seat has locked a card.</p>
             <div className="modal-list">
               {waitingOnPlayers.map((player) => (
                 <div key={player.id} className="modal-list-row">
@@ -724,341 +950,404 @@ function App() {
           </section>
         </div>
       ) : null}
+
       <main className="shell">
-      <section className="topbar">
-        <div className="topbar-copy">
-          <p className="eyebrow">Competing Futures / game lobby</p>
-          <h1>{activeGame?.name ?? 'Your game lobby'}</h1>
-          <p className="mini-label">
-            Signed in as {getDisplayName(profile, session.user)} / {profile?.app_role ?? 'player'}
-          </p>
-        </div>
-
-        <div className="topbar-status">
-          <div className="status-chip">
-            <span>Active games</span>
-            <strong>{activeGames.length}</strong>
-          </div>
-          <div className="status-chip event">
-            <span>Past games</span>
-            <strong>{pastGames.length}</strong>
-          </div>
-          <div className="status-chip">
-            <span>Seat</span>
-            <strong>{activeMembership?.power_key ?? activeMembership?.membership_role ?? 'none'}</strong>
-          </div>
-          <div className="hero-actions">
-            <button type="button" className="ghost" onClick={signOut}>
-              Sign out
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <section className="lower-grid overview-grid">
-        <aside className="selector-panel">
-          <div className="section-heading">
-            <p className="eyebrow">Create or join</p>
-            <h2>Launch a new game or join with a code</h2>
+        <section className="topbar">
+          <div className="topbar-copy">
+            <p className="eyebrow">Competing Futures / game lobby</p>
+            <h1>{activeGame?.name ?? 'Your game lobby'}</h1>
+            <p className="mini-label">
+              Signed in as {getDisplayName(profile, session.user)} / {profile?.app_role ?? 'player'}
+            </p>
           </div>
 
-          <form className="form-panel" onSubmit={handleCreateGame}>
-            <label className="form-label" htmlFor="game-name">
-              New game name
-            </label>
-            <input
-              id="game-name"
-              className="input-control"
-              value={createGameName}
-              onChange={(event) => setCreateGameName(event.target.value)}
-              placeholder="Spring strategy session"
-              required
-            />
-            <label className="form-label" htmlFor="create-seat">
-              Claim a seat now
-            </label>
-            <select
-              id="create-seat"
-              className="input-control"
-              value={createSeatKey}
-              onChange={(event) => setCreateSeatKey(event.target.value)}
-            >
-              <option value="">Join as observer</option>
-              {powerOptions.map((power) => (
-                <option key={power.id} value={power.id}>
-                  {power.shortName} / {power.name}
-                </option>
-              ))}
-            </select>
-            <button type="submit" disabled={actionLoading}>
-              {actionLoading ? 'Working...' : 'Create game'}
-            </button>
-          </form>
-
-          <form className="form-panel" onSubmit={handleJoinGame}>
-            <label className="form-label" htmlFor="join-code">
-              Join code
-            </label>
-            <input
-              id="join-code"
-              className="input-control code-input"
-              value={joinCode}
-              onChange={(event) => setJoinCode(event.target.value.toUpperCase())}
-              placeholder="ABC123"
-              required
-            />
-            <label className="form-label" htmlFor="join-seat">
-              Claim a seat on join
-            </label>
-            <select
-              id="join-seat"
-              className="input-control"
-              value={joinSeatKey}
-              onChange={(event) => setJoinSeatKey(event.target.value)}
-            >
-              <option value="">Join as observer</option>
-              {powerOptions.map((power) => (
-                <option key={power.id} value={power.id}>
-                  {power.shortName} / {power.name}
-                </option>
-              ))}
-            </select>
-            <button type="submit" disabled={actionLoading}>
-              {actionLoading ? 'Working...' : 'Join game'}
-            </button>
-          </form>
-        </aside>
-
-        <section className="board-panel board-panel-wide">
-          <div className="dashboard-stack">
-            <GameList
-              title="Active games"
-              games={activeGames}
-              memberships={memberships}
-              selectedGameId={selectedGameId}
-              onSelect={setSelectedGameId}
-              emptyMessage="No active games yet."
-            />
-            <GameList
-              title="Past games you played"
-              games={pastGames}
-              memberships={memberships}
-              selectedGameId={selectedGameId}
-              onSelect={setSelectedGameId}
-              emptyMessage="Finished games will appear here."
-            />
+          <div className="topbar-status">
+            <div className="status-chip">
+              <span>Active games</span>
+              <strong>{activeGames.length}</strong>
+            </div>
+            <div className="status-chip event">
+              <span>Past games</span>
+              <strong>{pastGames.length}</strong>
+            </div>
+            <div className="status-chip">
+              <span>Seat</span>
+              <strong>{activeMembership?.power_key ?? activeMembership?.membership_role ?? 'none'}</strong>
+            </div>
+            <div className="hero-actions">
+              <button type="button" className="ghost" onClick={signOut}>
+                Sign out
+              </button>
+            </div>
           </div>
         </section>
 
-        <aside className="info-panel">
-          <div className="section-heading">
-            <p className="eyebrow">Status</p>
-            <h2>Account and game state</h2>
-          </div>
-          <div className="event-panel compact">
-            <p className="event-label">Current status</p>
-            <h2>{activeGame?.status ?? 'No game selected'}</h2>
-            <p>{errorMessage || statusMessage}</p>
-            <p className="mini-label">
-              {activeGame?.join_code ? `Join code: ${activeGame.join_code}` : 'Create or join a game to continue.'}
-            </p>
-          </div>
-        </aside>
-      </section>
-
-      {activeGame && gameState ? (
-        <>
-          <section className="board-panel">
+        <section className="lower-grid overview-grid">
+          <aside className="selector-panel">
             <div className="section-heading">
-              <p className="eyebrow">Shared board</p>
-              <h2>Common tracks and central world board</h2>
+              <p className="eyebrow">Create or join</p>
+              <h2>Launch a new game or join with a code</h2>
             </div>
 
-            <div className="board-toolbar">
-              <div className="game-meta">
-                <span>Round {gameState.round}</span>
-                <span>{currentPhaseDefinition.label}</span>
-                <span>{currentPhase === 'choose_actions' ? 'Event face down' : currentEvent?.title ?? 'No event loaded'}</span>
-                <span>Join code {activeGame.join_code}</span>
-              </div>
-              <div className="hero-actions">
-                <button
-                  type="button"
-                  onClick={handleAdvanceFlow}
-                  disabled={!canManageGame || actionLoading || (currentPhase === 'victory_check' && Boolean(winner))}
-                >
-                  {currentPhase === 'choose_actions'
-                    ? 'Lock actions and reveal event'
-                    : currentPhase === 'resolve_event'
-                      ? 'Resolve global event'
-                      : currentPhase === 'resolve_actions'
-                        ? `Resolve ${currentTurnPlayer?.short_name ?? 'next'} action`
-                        : winner
-                          ? 'Victory locked'
-                          : 'Start next round'}
-                </button>
-                {canManageGame ? (
-                  <button type="button" className="ghost" onClick={handleCompleteGame} disabled={actionLoading}>
-                    {activeGame.status === 'completed' ? 'Reopen game' : 'Complete game'}
-                  </button>
-                ) : null}
-              </div>
-            </div>
+            <form className="form-panel" onSubmit={handleCreateGame}>
+              <label className="form-label" htmlFor="game-name">
+                New game name
+              </label>
+              <input
+                id="game-name"
+                className="input-control"
+                value={createGameName}
+                onChange={(event) => setCreateGameName(event.target.value)}
+                placeholder="Spring strategy session"
+                required
+              />
+              <label className="form-label" htmlFor="create-seat">
+                Claim a seat now
+              </label>
+              <select
+                id="create-seat"
+                className="input-control"
+                value={createSeatKey}
+                onChange={(event) => setCreateSeatKey(event.target.value)}
+              >
+                <option value="">Join as observer</option>
+                {powerOptions.map((power) => (
+                  <option key={power.id} value={power.id}>
+                    {power.shortName} / {power.name}
+                  </option>
+                ))}
+              </select>
+              <button type="submit" disabled={actionLoading}>
+                {actionLoading ? 'Working...' : 'Create game'}
+              </button>
+            </form>
 
-            <div className="tracks-panel">
-              {tracks.map((track) => (
-                <TrackRow key={track.key} label={track.label} trackKey={track.key} players={boardPlayers} />
-              ))}
-            </div>
+            <form className="form-panel" onSubmit={handleJoinGame}>
+              <label className="form-label" htmlFor="join-code">
+                Join code
+              </label>
+              <input
+                id="join-code"
+                className="input-control code-input"
+                value={joinCode}
+                onChange={(event) => setJoinCode(event.target.value.toUpperCase())}
+                placeholder="ABC123"
+                required
+              />
+              <label className="form-label" htmlFor="join-seat">
+                Claim a seat on join
+              </label>
+              <select
+                id="join-seat"
+                className="input-control"
+                value={joinSeatKey}
+                onChange={(event) => setJoinSeatKey(event.target.value)}
+              >
+                <option value="">Join as observer</option>
+                {powerOptions.map((power) => (
+                  <option key={power.id} value={power.id}>
+                    {power.shortName} / {power.name}
+                  </option>
+                ))}
+              </select>
+              <button type="submit" disabled={actionLoading}>
+                {actionLoading ? 'Working...' : 'Join game'}
+              </button>
+            </form>
+          </aside>
 
-            <div className="world-board">
-              <div className="map-surface" aria-hidden="true">
-                <img className="board-map-image" src={worldMap} alt="" />
-                <div className="grid-lines" />
-              </div>
+          <section className="board-panel board-panel-wide">
+            <div className="dashboard-stack">
+              <GameList
+                title="Active games"
+                games={activeGames}
+                memberships={memberships}
+                selectedGameId={selectedGameId}
+                onSelect={setSelectedGameId}
+                emptyMessage="No active games yet."
+              />
+              <GameList
+                title="Past games you played"
+                games={pastGames}
+                memberships={memberships}
+                selectedGameId={selectedGameId}
+                onSelect={setSelectedGameId}
+                emptyMessage="Finished games will appear here."
+              />
             </div>
           </section>
 
-          <section className="lower-grid">
-            <div className="selector-panel">
+          <aside className="info-panel">
+            <div className="section-heading">
+              <p className="eyebrow">Status</p>
+              <h2>Account and game state</h2>
+            </div>
+            <div className="event-panel compact">
+              <p className="event-label">Current status</p>
+              <h2>{activeGame?.status ?? 'No game selected'}</h2>
+              <p>{errorMessage || statusMessage}</p>
+              <p className="mini-label">
+                {activeGame?.join_code ? `Join code: ${activeGame.join_code}` : 'Create or join a game to continue.'}
+              </p>
+            </div>
+          </aside>
+        </section>
+
+        {activeGame && gameState ? (
+          <>
+            <section className="board-panel">
               <div className="section-heading">
-                <p className="eyebrow">Perspective</p>
-                <h2>{isAdmin ? 'Switch to any seat' : 'Seats and claims in this game'}</h2>
+                <p className="eyebrow">Shared board</p>
+                <h2>Rules-tab board state and world map</h2>
               </div>
-              <div className="player-tabs">
-                {(isAdmin ? boardPlayers : availableSeats).map((player) => (
+
+              <div className="board-toolbar">
+                <div className="game-meta">
+                  <span>Round {gameState.round}</span>
+                  <span>{currentPhaseDefinition.label}</span>
+                  <span>
+                    {currentPhase === 'choose_actions' ? 'Event hidden until reveal' : currentEvent?.title ?? 'No event loaded'}
+                  </span>
+                  <span>Join code {activeGame.join_code}</span>
+                </div>
+                <div className="hero-actions">
                   <button
                     type="button"
-                    key={player.id}
-                    className={player.power_key === activePowerKey ? 'player-tab active' : 'player-tab'}
-                    style={{ '--accent': player.accent }}
-                    onClick={() => setActivePowerKey(player.power_key)}
+                    onClick={handleAdvanceFlow}
+                    disabled={!canManageGame || actionLoading || (currentPhase === 'victory_check' && Boolean(winner))}
                   >
-                    <span>{player.short_name}</span>
-                    {player.name}
+                    {currentPhase === 'choose_actions'
+                      ? 'Reveal global event'
+                      : currentPhase === 'resolve_event'
+                        ? 'Apply event effects'
+                        : currentPhase === 'resolve_actions'
+                          ? `Resolve ${currentTurnPlayer?.short_name ?? 'next'} action`
+                          : winner
+                            ? 'Victory locked'
+                            : 'Resolve victory and next round'}
                   </button>
-                ))}
+                  {canManageGame ? (
+                    <button type="button" className="ghost" onClick={handleCompleteGame} disabled={actionLoading}>
+                      {activeGame.status === 'completed' ? 'Reopen game' : 'Complete game'}
+                    </button>
+                  ) : null}
+                </div>
               </div>
 
-              {!isAdmin && activeGame.status === 'active' ? (
-                <div className="seat-actions">
-                  <p className="mini-label">Claim or change your seat</p>
-                  <div className="seat-list">
-                    {availableSeats.map((player) => (
-                      <button
-                        type="button"
-                        key={player.id}
-                        className="seat-chip"
-                        onClick={() => handleClaimSeat(player.power_key)}
-                        disabled={actionLoading}
-                      >
-                        {player.short_name} / {player.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
+              <div className="tracks-panel">
+                {tracks.map((track) => (
+                  <TrackRow key={track.key} label={track.label} trackKey={track.key} players={boardPlayers} />
+                ))}
+              </div>
 
               <div className="event-panel compact">
-                <p className="event-label">Global event</p>
-                <h2>{currentEvent?.title ?? 'No event loaded'}</h2>
-                <p>{currentEvent?.text ?? 'No game event is available for this board yet.'}</p>
-                <p className="mini-label">{activeGame.status}</p>
-              </div>
-            </div>
-
-            <div className="private-panel">
-              <div className="section-heading">
-                <p className="eyebrow">Private area</p>
-                <h2>{activePlayer?.name ?? 'No seat selected'} hand and objective</h2>
+                <p className="event-label">Action order this round</p>
+                <h2>{currentOrder.map((powerKey) => boardPlayers.find((player) => player.power_key === powerKey)?.short_name ?? powerKey).join(' → ')}</h2>
+                <p>
+                  {currentPhase === 'choose_actions'
+                    ? 'The event is chosen already, but only its action order is public during the Preliminary Phase.'
+                    : currentEvent?.details ?? 'No event is active right now.'}
+                </p>
               </div>
 
-              <div className="private-objective">
-                <p className="mini-label">Hidden win condition</p>
-                <p>{privateState.objective || 'This seat has no private objective available for your account.'}</p>
+              <div className="world-board">
+                <div className="map-surface" aria-hidden="true">
+                  <img className="board-map-image" src={worldMap} alt="" />
+                  <div className="grid-lines" />
+                </div>
               </div>
+            </section>
 
-              <div className="hand-grid">
-                {privateState.cards.map((card) => {
-                  const isSelected = card.name === privateState.selectedAction;
-                  return (
-                    <article key={card.name} className={isSelected ? 'hand-card selected' : 'hand-card'}>
-                      <p className="mini-label">{isSelected ? 'Selected action' : 'Action card'}</p>
-                      <h3>{card.name}</h3>
-                      <p>{card.text}</p>
-                      {canEditSeatAction ? (
-                        <button type="button" className="hand-action-button" onClick={() => handleSelectAction(card.name)}>
-                          {isSelected ? 'Selected for this round' : 'Choose this action'}
+            <section className="lower-grid">
+              <div className="selector-panel">
+                <div className="section-heading">
+                  <p className="eyebrow">Perspective</p>
+                  <h2>{isAdmin ? 'Switch to any seat' : 'Seats and claims in this game'}</h2>
+                </div>
+                <div className="player-tabs">
+                  {(isAdmin ? boardPlayers : availableSeats).map((player) => (
+                    <button
+                      type="button"
+                      key={player.id}
+                      className={player.power_key === activePowerKey ? 'player-tab active' : 'player-tab'}
+                      style={{ '--accent': player.accent }}
+                      onClick={() => setActivePowerKey(player.power_key)}
+                    >
+                      <span>{player.short_name}</span>
+                      {player.name}
+                    </button>
+                  ))}
+                </div>
+
+                {!isAdmin && activeGame.status === 'active' ? (
+                  <div className="seat-actions">
+                    <p className="mini-label">Claim or change your seat</p>
+                    <div className="seat-list">
+                      {availableSeats.map((player) => (
+                        <button
+                          type="button"
+                          key={player.id}
+                          className="seat-chip"
+                          onClick={() => handleClaimSeat(player.power_key)}
+                          disabled={actionLoading}
+                        >
+                          {player.short_name} / {player.name}
                         </button>
-                      ) : null}
-                    </article>
-                  );
-                })}
-              </div>
-            </div>
-
-            <aside className="info-panel">
-              <div className="section-heading">
-                <p className="eyebrow">Table rhythm</p>
-                <h2>Round flow and seat history</h2>
-              </div>
-              <div className="phase-list">
-                {phases.map((phase) => (
-                  <article key={phase.id} className={phase.id === currentPhase ? 'active-phase' : ''}>
-                    <p className="mini-label">{phase.id === currentPhase ? 'Current stage' : 'Upcoming stage'}</p>
-                    <p>{phase.label}</p>
-                  </article>
-                ))}
-              </div>
-              <div className="concealed-panel">
-                <p className="mini-label">Round state</p>
-                <div className="concealed-row">
-                  <strong>Current phase</strong>
-                  <span>{currentPhaseDefinition.label}</span>
-                </div>
-                <div className="concealed-row">
-                  <strong>Current event</strong>
-                  <span>{currentPhase === 'choose_actions' ? 'Hidden until reveal' : currentEvent?.title ?? 'None'}</span>
-                </div>
-                <div className="concealed-row">
-                  <strong>Current turn</strong>
-                  <span>{currentTurnPlayer ? currentTurnPlayer.name : winner ? winner.name : 'No active turn'}</span>
-                </div>
-                <div className="concealed-row">
-                  <strong>Winner</strong>
-                  <span>{winner?.name ?? 'No winner yet'}</span>
-                </div>
-              </div>
-              <div className="concealed-panel">
-                <p className="mini-label">Chosen actions</p>
-                {turnOrder.map((powerKey) => {
-                  const player = boardPlayers.find((entry) => entry.power_key === powerKey);
-
-                  if (!player) {
-                    return null;
-                  }
-
-                  return (
-                    <div className="concealed-row" key={player.id}>
-                      <strong>{player.short_name}</strong>
-                      <span>{selectedActionsByPower[player.power_key] || 'No action selected'}</span>
+                      ))}
                     </div>
-                  );
-                })}
-              </div>
-              <div className="concealed-panel">
-                <p className="mini-label">Seat assignments</p>
-                {(gameState.assignments ?? []).map((assignment) => (
-                  <div className="concealed-row" key={`${assignment.user_id}-${assignment.game_id}`}>
-                    <strong>{assignment.power_key ?? 'observer'}</strong>
-                    <span>{assignment.membership_role}</span>
                   </div>
-                ))}
+                ) : null}
+
+                <div className="event-panel compact">
+                  <p className="event-label">Global event</p>
+                  <h2>{currentPhase === 'choose_actions' ? 'Hidden Until Reveal' : currentEvent?.title ?? 'No event loaded'}</h2>
+                  <p>
+                    {currentPhase === 'choose_actions'
+                      ? 'The Rules tab keeps the event face-down until the Global Event Phase.'
+                      : currentEvent?.details ?? 'No event card is available for this board yet.'}
+                  </p>
+                  <p className="mini-label">{activeGame.status}</p>
+                </div>
               </div>
-            </aside>
-          </section>
-        </>
-      ) : null}
+
+              <div className="private-panel">
+                <div className="section-heading">
+                  <p className="eyebrow">Private area</p>
+                  <h2>{activePlayer?.name ?? 'No seat selected'} hand and objective</h2>
+                </div>
+
+                <div className="private-objective">
+                  <p className="mini-label">Hidden win condition</p>
+                  <p>{privateState.objective || 'This seat has no private objective available for your account.'}</p>
+                  {currentPhase === 'victory_check' ? (
+                    <p className="mini-label">
+                      {objectiveEligible ? 'Objective conditions met.' : 'Objective conditions not met.'}
+                    </p>
+                  ) : null}
+                  {canEditVictory && objectiveEligible ? (
+                    <div className="hero-actions">
+                      <button type="button" onClick={() => handleVictoryToggle(!privateState.declaredVictory)} disabled={actionLoading}>
+                        {privateState.declaredVictory ? 'Withdraw victory attempt' : 'Declare victory attempt'}
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="hand-grid">
+                  {privateState.cards.map((card) => {
+                    const cardDefinition = getActionCard(card.definitionKey ?? getBaseCardKey(card.cardKey));
+                    const isSelected = card.cardKey === privateState.selectedCardKey;
+
+                    return (
+                      <article key={card.cardKey} className={isSelected ? 'hand-card selected' : 'hand-card'}>
+                        <p className="mini-label">{isSelected ? 'Selected action' : 'Action card'}</p>
+                        <h3>{card.name}</h3>
+                        <p>{card.text}</p>
+                        {canEditSeatAction ? (
+                          <ActionSelectionFields
+                            card={card}
+                            players={boardPlayers}
+                            value={cardDrafts[card.cardKey] ?? buildDefaultSelectionPayload(cardDefinition, activePowerKey)}
+                            onChange={(nextValue) =>
+                              setCardDrafts((current) => ({
+                                ...current,
+                                [card.cardKey]: nextValue,
+                              }))
+                            }
+                          />
+                        ) : null}
+                        {canEditSeatAction ? (
+                          <button type="button" className="hand-action-button" onClick={() => handleSelectAction(card)}>
+                            {isSelected ? 'Update locked action' : 'Lock this action'}
+                          </button>
+                        ) : null}
+                      </article>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <aside className="info-panel">
+                <div className="section-heading">
+                  <p className="eyebrow">Table rhythm</p>
+                  <h2>Round flow, reveals, and public log</h2>
+                </div>
+                <div className="phase-list">
+                  {phases.map((phase) => (
+                    <article key={phase.id} className={phase.id === currentPhase ? 'active-phase' : ''}>
+                      <p className="mini-label">{phase.id === currentPhase ? 'Current stage' : 'Upcoming stage'}</p>
+                      <p>{phase.label}</p>
+                    </article>
+                  ))}
+                </div>
+                <div className="concealed-panel">
+                  <p className="mini-label">Round state</p>
+                  <div className="concealed-row">
+                    <strong>Current phase</strong>
+                    <span>{currentPhaseDefinition.label}</span>
+                  </div>
+                  <div className="concealed-row">
+                    <strong>Current event</strong>
+                    <span>{currentPhase === 'choose_actions' ? 'Hidden until reveal' : currentEvent?.title ?? 'None'}</span>
+                  </div>
+                  <div className="concealed-row">
+                    <strong>Current turn</strong>
+                    <span>{currentTurnPlayer ? currentTurnPlayer.name : winner ? winner.name : 'No active turn'}</span>
+                  </div>
+                  <div className="concealed-row">
+                    <strong>Winner</strong>
+                    <span>{winner?.name ?? 'No winner yet'}</span>
+                  </div>
+                </div>
+                <div className="concealed-panel">
+                  <p className="mini-label">Chosen actions</p>
+                  {turnOrder.map((powerKey) => {
+                    const player = boardPlayers.find((entry) => entry.power_key === powerKey);
+                    const revealedAction = revealedActions[powerKey];
+                    const isLocked = Boolean(selectedCardKeysByPower[powerKey]);
+
+                    if (!player) {
+                      return null;
+                    }
+
+                    let label = 'Waiting';
+
+                    if (revealedAction) {
+                      label = `${revealedAction.cardName} — ${revealedAction.outcome}`;
+                    } else if (currentPhase === 'choose_actions' || currentPhase === 'resolve_event') {
+                      label = isLocked ? 'Locked face-down' : 'Waiting';
+                    } else if (isLocked) {
+                      label = 'Face-down';
+                    }
+
+                    return (
+                      <div className="concealed-row" key={player.id}>
+                        <strong>{player.short_name}</strong>
+                        <span>{label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="concealed-panel">
+                  <p className="mini-label">Public log</p>
+                  {publicLog.length ? (
+                    publicLog.map((entry, index) => (
+                      <div className="concealed-row" key={`${entry}-${index}`}>
+                        <strong>{index + 1}</strong>
+                        <span>{entry}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="concealed-row">
+                      <strong>0</strong>
+                      <span>No public log entries yet.</span>
+                    </div>
+                  )}
+                </div>
+              </aside>
+            </section>
+          </>
+        ) : null}
       </main>
     </>
   );
