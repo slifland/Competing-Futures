@@ -673,7 +673,7 @@ button {
 
 .lower-grid {
   display: grid;
-  grid-template-columns: 0.72fr 1.08fr 0.9fr;
+  grid-template-columns: 0.68fr 1.5fr 0.78fr;
   gap: 1rem;
 }
 
@@ -685,8 +685,14 @@ button {
 .hand-grid {
   display: grid;
   gap: 0.8rem;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr));
   margin-top: 1rem;
+}
+
+.hand-card {
+  display: grid;
+  align-content: start;
+  gap: 0.75rem;
 }
 
 .objective-topline,
@@ -811,11 +817,12 @@ button {
 }
 
 .odds-strip {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   margin: 1rem 0 0.85rem;
 }
 
 .odds-stat.primary {
+  grid-column: 1 / -1;
   background:
     radial-gradient(circle at top right, rgba(242, 194, 102, 0.14), transparent 46%),
     rgba(255, 255, 255, 0.04);
@@ -859,7 +866,19 @@ button {
 
 .outcome-table-head,
 .outcome-table-row {
-  grid-template-columns: minmax(0, 1.35fr) repeat(4, minmax(0, 0.6fr));
+  grid-template-columns: minmax(3.25rem, 1.1fr) repeat(4, minmax(2.25rem, 0.75fr));
+}
+
+.outcome-table-head span:not(:first-child),
+.outcome-table-row span:not(:first-child) {
+  text-align: center;
+}
+
+.outcome-table-head,
+.outcome-table-row,
+.criteria-table-head,
+.criteria-table-row {
+  width: 100%;
 }
 
 .delta-positive {
