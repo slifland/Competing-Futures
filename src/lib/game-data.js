@@ -162,6 +162,73 @@ function formatDeltas(deltas) {
     .join(', ');
 }
 
+function formatActorLabel(powerKey) {
+  if (powerKey === 'lab-a' || powerKey === 'lab-b') {
+    return getActor(powerKey)?.shortName ?? powerKey;
+  }
+
+  return getActor(powerKey)?.shortName ?? powerKey.toUpperCase();
+}
+
+function formatEffectTarget(effect, actingPowerKey, payload) {
+  if (effect.target === 'self') {
+    return formatActorLabel(actingPowerKey);
+  }
+
+  if (effect.target === 'target' && payload?.targetActorKey) {
+    return formatActorLabel(payload.targetActorKey);
+  }
+
+  if (effect.target === 'targets') {
+    const targetLabels = (payload?.targetActorKeys ?? []).map(formatActorLabel);
+    return targetLabels.join(', ');
+  }
+
+  if (effect.target === 'actors') {
+    const actorLabels = (effect.actorKeys ?? []).map(formatActorLabel);
+    return actorLabels.join(', ');
+  }
+
+  if (effect.target === 'all') {
+    return 'All actors';
+  }
+
+  if (effect.target === 'all_except_self') {
+    return 'All other actors';
+  }
+
+  if (effect.target === 'labs') {
+    return 'Both labs';
+  }
+
+  if (effect.target === 'labs_except_self') {
+    return 'Other labs';
+  }
+
+  if (effect.target === 'other-lab') {
+    return 'Other lab';
+  }
+
+  return effect.target;
+}
+
+export function formatEffectSummary(effect, actingPowerKey = 'event', payload = {}) {
+  if (!effect?.deltas) {
+    return '';
+  }
+
+  const targetLabel = formatEffectTarget(effect, actingPowerKey, payload);
+  const deltasLabel = Object.entries(effect.deltas)
+    .map(([trackKey, delta]) => `${formatTrackLabel(trackKey)} ${delta > 0 ? '+' : ''}${delta}`)
+    .join(', ');
+
+  return targetLabel ? `${targetLabel}: ${deltasLabel}` : deltasLabel;
+}
+
+export function getEventEffectSummaries(event) {
+  return (event?.effects ?? []).map((effect) => formatEffectSummary(effect)).filter(Boolean);
+}
+
 function randomize(items) {
   const next = [...items];
   for (let index = next.length - 1; index > 0; index -= 1) {
@@ -2056,9 +2123,14 @@ function resolveValueLockIn(players, managerState) {
 }
 
 function resolveActionByCard(players, managerState, gameState, actingPowerKey, privateState) {
+  const availableCards = privateState.hand ?? privateState.cards ?? [];
+  const selectedCard =
+    privateState.selectedCard ??
+    availableCards.find((entry) => entry.cardKey === privateState.selectedCardKey) ??
+    availableCards.find((entry) => entry.name === privateState.selectedAction);
   const card = getActionCard(
-    privateState.selectedCard?.definitionKey ??
-      privateState.selectedCard?.cardKey ??
+    selectedCard?.definitionKey ??
+      selectedCard?.cardKey ??
       getBaseCardKey(privateState.selectedCardKey),
   );
 
@@ -2600,7 +2672,9 @@ export function advanceGameState({ players, managerState, phase, round, currentT
 
     const resolved = resolveActionByCard(nextPlayers, nextManagerState, { engineState: nextEngineState }, actingPowerKey, {
       ...privateState,
-      selectedCard: privateState.hand?.find((card) => card.cardKey === privateState.selectedCardKey),
+      selectedCard: (privateState.hand ?? privateState.cards ?? []).find(
+        (card) => card.cardKey === privateState.selectedCardKey,
+      ),
     });
 
     nextPlayers = resolved.players;

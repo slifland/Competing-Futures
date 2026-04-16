@@ -6,6 +6,7 @@ import {
   getActionCard,
   getBaseCardKey,
   getCurrentEvent,
+  getEventEffectSummaries,
   isObjectiveEligible,
   phases,
   powerOptions,
@@ -891,6 +892,7 @@ function App() {
   const [statusMessage, setStatusMessage] = React.useState('Checking Supabase session...');
   const [errorMessage, setErrorMessage] = React.useState('');
   const [announcement, setAnnouncement] = React.useState(null);
+  const [hudPanel, setHudPanel] = React.useState(null);
   const seenAnnouncementsRef = React.useRef(new Set());
   const [walkthroughDismissed, setWalkthroughDismissed] = React.useState(() => {
     if (typeof window === 'undefined') {
@@ -1222,6 +1224,7 @@ function App() {
     boardPlayers,
     objectiveEligible,
   );
+  const currentEventEffects = React.useMemo(() => getEventEffectSummaries(currentEvent), [currentEvent]);
 
   const selectedCardKeysByPower = React.useMemo(() => {
     const next = Object.fromEntries(
@@ -1264,9 +1267,7 @@ function App() {
     if (currentPhase === 'resolve_event' && currentEvent) {
       setAnnouncement({
         title: `Global event: ${currentEvent.title}`,
-        body:
-          currentEvent.details ??
-          'The event has been revealed. Read this summary before the round continues.',
+        body: [currentEvent.details, ...currentEventEffects].filter(Boolean).join('\n'),
         meta: `Round ${gameState.round} / Global Event Phase`,
       });
       seenAnnouncements.add(announcementKey);
@@ -1295,6 +1296,34 @@ function App() {
       return;
     }
   }, [activeGame, announcementKey, boardPlayers, currentEvent, currentOrder, currentPhase, gameState, winner]);
+
+  const hudAutoKey = activeGame ? `${activeGame.id}:${gameState?.round ?? 0}:${currentPhase}` : '';
+
+  React.useEffect(() => {
+    if (!activeGame || !gameState) {
+      setHudPanel(null);
+      return;
+    }
+
+    if (currentPhase === 'choose_actions') {
+      setHudPanel('cards');
+      return;
+    }
+
+    if (currentPhase === 'resolve_event') {
+      setHudPanel('event');
+      return;
+    }
+
+    if (currentPhase === 'resolve_actions') {
+      setHudPanel('log');
+      return;
+    }
+
+    if (currentPhase === 'victory_check') {
+      setHudPanel('objective');
+    }
+  }, [activeGame?.id, currentPhase, gameState?.round, hudAutoKey]);
 
   async function signInWithGoogle() {
     if (!supabase) {
@@ -1515,6 +1544,7 @@ function App() {
       );
 
       setStatusMessage(`Locked ${card.name} for ${activePlayer.name}.`);
+      setHudPanel(null);
     } catch (error) {
       setErrorMessage(error.message);
     } finally {
@@ -1642,6 +1672,56 @@ function App() {
     }
   }
 
+  const activeGameReady = Boolean(activeGame && gameState);
+  const advanceFlowLabel =
+    currentPhase === 'choose_actions'
+      ? 'Reveal global event'
+      : currentPhase === 'resolve_event'
+        ? 'Apply event effects'
+        : currentPhase === 'resolve_actions'
+          ? `Resolve ${currentTurnPlayer?.short_name ?? 'next'} action`
+          : winner
+            ? 'Victory locked'
+            : 'Resolve victory and next round';
+  const canAdvanceFlow =
+    canManageGame && !actionLoading && !(currentPhase === 'victory_check' && Boolean(winner));
+  const missingLockPlayers = turnOrder
+    .filter((powerKey) => !selectedCardKeysByPower[powerKey])
+    .map((powerKey) => boardPlayers.find((player) => player.power_key === powerKey))
+    .filter(Boolean);
+  const tableHeadline =
+    currentPhase === 'choose_actions'
+      ? missingLockPlayers.length
+        ? `Waiting on ${missingLockPlayers.map((player) => player.short_name).join(', ')}`
+        : 'All seats locked. Ready to reveal the event.'
+      : currentPhase === 'resolve_event'
+        ? `${currentEvent?.title ?? 'Global event'} is on deck`
+        : currentPhase === 'resolve_actions'
+          ? `${currentTurnPlayer?.name ?? 'Next actor'} is resolving`
+          : winner
+            ? `${winner.name} has won`
+            : 'Review objectives and victory declarations';
+  const tableSubline =
+    currentPhase === 'choose_actions'
+      ? `${lockedSeatCount}/${turnOrder.length} seats locked this round.`
+      : currentPhase === 'resolve_event'
+        ? currentEvent?.details ?? 'The revealed global event resolves before any actions.'
+        : currentPhase === 'resolve_actions'
+          ? `Action order: ${currentOrder
+              .map((powerKey) => boardPlayers.find((player) => player.power_key === powerKey)?.short_name ?? powerKey)
+              .join(' -> ')}.`
+          : winner
+            ? 'The game is complete.'
+            : 'Victory declarations are checked before the next round begins.';
+  const dockButtons = [
+    { key: 'cards', label: 'Cards', badge: 'A' },
+    { key: 'event', label: 'Event', badge: 'E' },
+    { key: 'tracks', label: 'Tracks', badge: 'T' },
+    { key: 'objective', label: 'Win', badge: 'W' },
+    { key: 'seats', label: 'Seats', badge: 'S' },
+    { key: 'log', label: 'Log', badge: 'L' },
+  ];
+
   if (!authReady) {
     return (
       <main className="auth-shell">
@@ -1695,7 +1775,7 @@ function App() {
           >
             <p className="eyebrow">Round gate</p>
             <h2 id="waiting-on-title">Still waiting on action choices</h2>
-            <p className="modal-copy">The Rules-tab flow cannot advance until every seat has locked a card.</p>
+            <p className="modal-copy">The turn cannot advance until every seat has locked a card.</p>
             <div className="modal-list">
               {waitingOnPlayers.map((player) => (
                 <div key={player.id} className="modal-list-row">
@@ -1711,412 +1791,118 @@ function App() {
         </div>
       ) : null}
 
-      <main className="shell">
-        <section className="topbar">
-          <div className="topbar-copy">
-            <p className="eyebrow">Competing Futures / game lobby</p>
-            <h1>{activeGame?.name ?? 'Your game lobby'}</h1>
-            <p className="mini-label">
-              Signed in as {getDisplayName(profile, session.user)} / {profile?.app_role ?? 'player'}
-            </p>
-          </div>
-
-          <div className="topbar-status">
-            <div className="status-chip">
-              <span>Active games</span>
-              <strong>{activeGames.length}</strong>
-            </div>
-            <div className="status-chip event">
-              <span>Past games</span>
-              <strong>{pastGames.length}</strong>
-            </div>
-            <div className="status-chip">
-              <span>Seat</span>
-              <strong>{activeMembership?.power_key ?? activeMembership?.membership_role ?? 'none'}</strong>
-            </div>
-            <div className="hero-actions">
-              <button type="button" className="ghost" onClick={signOut}>
-                Sign out
-              </button>
-            </div>
-          </div>
-        </section>
-
-        <section className="lower-grid overview-grid">
-          <aside className="selector-panel">
-            <div className="section-heading">
-              <p className="eyebrow">Create or join</p>
-              <h2>Launch a lobby or enter one with a six-letter code</h2>
+      <main className={activeGameReady ? 'shell in-game' : 'shell'}>
+        {activeGameReady ? (
+          <section className="game-surface">
+            <div className="game-surface-map" aria-hidden="true">
+              <img className="board-map-image" src={worldMap} alt="" />
+              <div className="grid-lines" />
+              {boardPlayers.map((player) => (
+                <div
+                  key={player.id}
+                  className={`board-piece ${player.home_class}${player.power_key === activePowerKey ? ' active' : ''}`}
+                  style={{ '--accent': player.accent }}
+                >
+                  <span>{player.short_name}</span>
+                  <small>{player.name}</small>
+                </div>
+              ))}
             </div>
 
-            <form className="form-panel" onSubmit={handleCreateGame}>
-              <label className="form-label" htmlFor="game-name">
-                New game name
-              </label>
-              <input
-                id="game-name"
-                className="input-control"
-                value={createGameName}
-                onChange={(event) => setCreateGameName(event.target.value)}
-                placeholder="Spring strategy session"
-                required
-              />
-              <label className="form-label" htmlFor="create-seat">
-                Claim a seat now
-              </label>
-              <select
-                id="create-seat"
-                className="input-control"
-                value={createSeatKey}
-                onChange={(event) => setCreateSeatKey(event.target.value)}
-              >
-                <option value="">Join as observer</option>
-                {powerOptions.map((power) => (
-                  <option key={power.id} value={power.id}>
-                    {power.shortName} / {power.name}
-                  </option>
-                ))}
-              </select>
-              <button type="submit" disabled={actionLoading}>
-                {actionLoading ? 'Working...' : 'Create game'}
-              </button>
-            </form>
-
-            <form className="form-panel" onSubmit={handleJoinGame}>
-              <label className="form-label" htmlFor="join-code">
-                Six-letter join code
-              </label>
-              <input
-                id="join-code"
-                className="input-control code-input"
-                value={joinCode}
-                onChange={(event) => setJoinCode(event.target.value.toUpperCase())}
-                placeholder="ABC123"
-                required
-              />
-              <label className="form-label" htmlFor="join-seat">
-                Claim a seat on join
-              </label>
-              <select
-                id="join-seat"
-                className="input-control"
-                value={joinSeatKey}
-                onChange={(event) => setJoinSeatKey(event.target.value)}
-              >
-                <option value="">Join as observer</option>
-                {powerOptions.map((power) => (
-                  <option key={power.id} value={power.id}>
-                    {power.shortName} / {power.name}
-                  </option>
-                ))}
-              </select>
-              <p className="mini-label">
-                Ask the host for the code shown on the selected game card. If every actor seat is filled, the join will be rejected.
-              </p>
-              <button type="submit" disabled={actionLoading}>
-                {actionLoading ? 'Working...' : 'Join game'}
-              </button>
-            </form>
-          </aside>
-
-          <section className="board-panel board-panel-wide">
-            <div className="dashboard-stack">
-              <GameList
-                title="Active games"
-                games={activeGames}
-                memberships={memberships}
-                selectedGameId={selectedGameId}
-                onSelect={setSelectedGameId}
-                emptyMessage="No active games yet."
-              />
-              <GameList
-                title="Past games you played"
-                games={pastGames}
-                memberships={memberships}
-                selectedGameId={selectedGameId}
-                onSelect={setSelectedGameId}
-                emptyMessage="Finished games will appear here."
-              />
-            </div>
-          </section>
-
-          <aside className="info-panel">
-            <div className="section-heading">
-              <p className="eyebrow">Selected game</p>
-              <h2>What to share and where to go next</h2>
-            </div>
-            <div className="event-panel compact">
-              <p className="event-label">Lobby status</p>
-              <h2>{activeGame?.status ?? 'No game selected'}</h2>
-              <p>{errorMessage || statusMessage}</p>
-              <p className="mini-label">
-                {liveJoinCode ? `Join code: ${liveJoinCode}` : 'Create or join a game to continue.'}
-              </p>
-            </div>
-            <div className="event-panel compact">
-              <p className="event-label">How players join</p>
-              <h2>{liveJoinCode || 'Select a game first'}</h2>
-              <p>
-                Select a game from the center column, copy its join code, then tell players to paste that code into the Join game form on the left.
-              </p>
-              <p className="mini-label">The actual board for the selected game appears below under Shared board.</p>
-            </div>
-            {activeMembership ? (
-              <div className="hero-actions">
-                <button type="button" className="ghost" onClick={handleLeaveGame} disabled={actionLoading}>
-                  Leave game
-                </button>
+            <header className="game-topbar">
+              <div>
+                <p className="eyebrow">Competing Futures / live board</p>
+                <h1>{activeGame.name}</h1>
+                <p className="mini-label">
+                  Signed in as {getDisplayName(profile, session.user)} / {profile?.app_role ?? 'player'}
+                </p>
               </div>
-            ) : null}
-          </aside>
-        </section>
-
-        {activeGame && gameState ? (
-          <>
-            {!walkthroughDismissed ? (
-              <section className="board-panel walkthrough-panel">
-                <div className="section-heading">
-                  <p className="eyebrow">Quick walkthrough</p>
-                  <h2>This is the actual game screen</h2>
-                </div>
-                <div className="walkthrough-list">
-                  {walkthroughSteps.map((step) => (
-                    <div key={step} className="walkthrough-step">
-                      <strong>Step</strong>
-                      <span>{step}</span>
-                    </div>
-                  ))}
-                </div>
-                <div className="hero-actions">
-                  <button type="button" className="ghost" onClick={dismissWalkthrough}>
-                    Hide walkthrough
-                  </button>
-                </div>
-              </section>
-            ) : null}
-
-            <section className="board-panel">
-              <div className="section-heading">
-                <p className="eyebrow">Shared board</p>
-                <h2>Actual game board, event state, and world map</h2>
-              </div>
-
-              <div className="board-toolbar">
+              <div className="game-topbar-actions">
                 <div className="game-meta">
                   <span>Round {gameState.round}</span>
                   <span>{currentPhaseDefinition.label}</span>
-                  <span>
-                    {currentPhase === 'choose_actions' ? 'Event hidden until reveal' : currentEvent?.title ?? 'No event loaded'}
-                  </span>
-                  <span>Join code {liveJoinCode}</span>
+                  <span>{liveJoinCode ? `Join code ${liveJoinCode}` : 'Join code pending'}</span>
                 </div>
                 <div className="hero-actions">
-                  <button
-                    type="button"
-                    onClick={handleAdvanceFlow}
-                    disabled={!canManageGame || actionLoading || (currentPhase === 'victory_check' && Boolean(winner))}
-                  >
-                    {currentPhase === 'choose_actions'
-                      ? 'Reveal global event'
-                      : currentPhase === 'resolve_event'
-                        ? 'Apply event effects'
-                        : currentPhase === 'resolve_actions'
-                          ? `Resolve ${currentTurnPlayer?.short_name ?? 'next'} action`
-                          : winner
-                            ? 'Victory locked'
-                            : 'Resolve victory and next round'}
+                  <button type="button" className="ghost" onClick={() => setSelectedGameId('')}>
+                    Back to lobby
                   </button>
-                  {canManageGame ? (
-                    <button type="button" className="ghost" onClick={handleCompleteGame} disabled={actionLoading}>
-                      {liveGameStatus === 'completed' ? 'Reopen game' : 'Complete game'}
+                  {activeMembership ? (
+                    <button type="button" className="ghost" onClick={handleLeaveGame} disabled={actionLoading}>
+                      Leave game
                     </button>
                   ) : null}
-                  {isAdmin ? (
-                    <button type="button" className="ghost" onClick={handleDeleteGame} disabled={actionLoading}>
-                      Delete game
-                    </button>
-                  ) : null}
+                  <button type="button" className="ghost" onClick={signOut}>
+                    Sign out
+                  </button>
                 </div>
               </div>
+            </header>
 
-              <div className="tracks-panel">
-                {tracks.map((track) => (
-                  <TrackRow key={track.key} label={track.label} trackKey={track.key} players={boardPlayers} />
-                ))}
-              </div>
+            <div className="hud-dock" aria-label="Game overlays">
+              {dockButtons.map((button) => (
+                <button
+                  type="button"
+                  key={button.key}
+                  className={hudPanel === button.key ? 'hud-dock-button active' : 'hud-dock-button'}
+                  onClick={() => setHudPanel((current) => (current === button.key ? null : button.key))}
+                >
+                  <strong>{button.badge}</strong>
+                  <span>{button.label}</span>
+                </button>
+              ))}
+            </div>
 
-              <div className="event-panel compact">
-                <p className="event-label">Global event and action order</p>
-                <h2>{currentOrder.map((powerKey) => boardPlayers.find((player) => player.power_key === powerKey)?.short_name ?? powerKey).join(' → ')}</h2>
-                <p>
-                  {currentPhase === 'choose_actions'
-                    ? 'The event is chosen already, but only its action order is public during the Preliminary Phase.'
-                    : currentEvent?.details ?? 'No event is active right now.'}
-                </p>
-                <p className="mini-label">
-                  {currentPhase === 'choose_actions'
-                    ? 'A popup appears when the global event is revealed.'
-                    : `Global event: ${currentEvent?.title ?? 'None'}`}
-                </p>
-              </div>
-
-              <div className="world-board">
-                <div className="map-surface" aria-hidden="true">
-                  <img className="board-map-image" src={worldMap} alt="" />
-                  <div className="grid-lines" />
-                </div>
-              </div>
-            </section>
-
-            <section className="lower-grid">
-              <div className="selector-panel">
-                <div className="section-heading">
-                  <p className="eyebrow">Perspective</p>
-                  <h2>{isAdmin ? 'Switch to any seat' : 'Seats and claims in this game'}</h2>
-                </div>
-                <div className="player-tabs">
-                  {(isAdmin ? boardPlayers : availableSeats).map((player) => (
-                    <button
-                      type="button"
-                      key={player.id}
-                      className={player.power_key === activePowerKey ? 'player-tab active' : 'player-tab'}
-                      style={{ '--accent': player.accent }}
-                      onClick={() => setActivePowerKey(player.power_key)}
-                    >
-                      <span>{player.short_name}</span>
-                      {player.name}
-                    </button>
-                  ))}
-                </div>
-
-                {!isAdmin && liveGameStatus === 'active' ? (
-                  <div className="seat-actions">
-                    <p className="mini-label">Claim or change your seat</p>
-                    <div className="seat-list">
-                      {availableSeats.map((player) => (
-                        <button
-                          type="button"
-                          key={player.id}
-                          className="seat-chip"
-                          onClick={() => handleClaimSeat(player.power_key)}
-                          disabled={actionLoading}
-                        >
-                          {player.short_name} / {player.name}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-
-                <div className="concealed-panel">
-                  <p className="mini-label">Lobby roster</p>
-                  {boardPlayers.map((player) => {
-                    const member = joinedPlayerByPower.get(player.power_key);
-                    return (
-                      <div className="concealed-row" key={player.id}>
-                        <strong>{player.short_name}</strong>
-                        <span>{member ? `${member.display_name} claimed this seat` : 'Open seat'}</span>
-                      </div>
-                    );
-                  })}
-                  {observerMembers.map((member) => (
-                    <div className="concealed-row" key={`${member.user_id}-observer`}>
-                      <strong>OBS</strong>
-                      <span>{member.display_name} is observing</span>
-                    </div>
-                  ))}
-                  <div className="concealed-row">
-                    <strong>Open</strong>
-                    <span>{openSeatCount} seat(s) still available</span>
-                  </div>
-                </div>
-
-                <div className="event-panel compact">
-                  <p className="event-label">Global event</p>
-                  <h2>{currentPhase === 'choose_actions' ? 'Hidden Until Reveal' : currentEvent?.title ?? 'No event loaded'}</h2>
-                  <p>
-                    {currentPhase === 'choose_actions'
-                      ? 'The Rules tab keeps the event face-down until the Global Event Phase.'
-                      : currentEvent?.details ?? 'No event card is available for this board yet.'}
-                  </p>
-                  <p className="mini-label">{liveGameStatus}</p>
-                </div>
-              </div>
-
-              <div className="private-panel">
-                <div className="section-heading">
-                  <p className="eyebrow">Private area</p>
-                  <h2>{activePlayer?.name ?? 'No seat selected'} hand and objective</h2>
-                </div>
-
-                <div className="private-objective">
-                  <div className="objective-topline">
+            {hudPanel ? (
+              <div className="game-overlay-layer" role="presentation" onClick={() => setHudPanel(null)}>
+                <section
+                  className="game-overlay-card"
+                  role="dialog"
+                  aria-modal="false"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <div className="game-overlay-head">
                     <div>
-                      <p className="mini-label">Hidden win condition</p>
-                      <h3>{parsedObjective?.title ?? 'No objective loaded'}</h3>
+                      <p className="eyebrow">Overlay</p>
+                      <h2>
+                        {hudPanel === 'cards'
+                          ? `${activePlayer?.name ?? 'Seat'} actions`
+                          : hudPanel === 'event'
+                            ? currentPhase === 'choose_actions'
+                              ? 'Hidden global event'
+                              : currentEvent?.title ?? 'No event loaded'
+                            : hudPanel === 'tracks'
+                              ? 'Shared tracks'
+                              : hudPanel === 'objective'
+                                ? parsedObjective?.title ?? 'Hidden win condition'
+                                : hudPanel === 'seats'
+                                  ? 'Seats and readiness'
+                                  : 'Round flow and public log'}
+                      </h2>
                     </div>
-                    <div className="objective-scorecard">
-                      <strong>{parsedObjective ? `${objectiveMetCount}/${objectiveChecks.length}` : '0/0'}</strong>
-                      <span>criteria met</span>
-                    </div>
+                    <button type="button" className="ghost overlay-close" onClick={() => setHudPanel(null)}>
+                      Close
+                    </button>
                   </div>
-                  <p>{parsedObjective?.description ?? 'This seat has no private objective available for your account.'}</p>
-                  {parsedObjective ? (
-                    <div className="objective-summary-grid">
-                      <div className="objective-summary-card">
-                        <span className="mini-label">Victory path</span>
-                        <strong>{parsedObjective.outcome}</strong>
-                        <small>{objectiveRollSummary.label}</small>
-                      </div>
-                      <div className="objective-summary-card">
-                        <span className="mini-label">Win odds now</span>
-                        <strong>{formatPercent(objectiveRollSummary.chance)}</strong>
-                        <small>{objectiveEligible ? 'Based on current board state' : 'Blocked until all criteria are met'}</small>
-                      </div>
-                    </div>
-                  ) : null}
-                  {objectiveChecks.length ? (
-                    <div className="criteria-table">
-                      <div className="criteria-table-head">
-                        <span>Condition</span>
-                        <span>Current</span>
-                        <span>Status</span>
-                      </div>
-                      {objectiveChecks.map((check) => (
-                        <div className="criteria-table-row" key={check.label}>
-                          <strong>{check.label}</strong>
-                          <span>{check.current}</span>
-                          <span className={check.met ? 'status-pill met' : 'status-pill unmet'}>
-                            {check.met ? 'Met' : 'Miss'}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-                  {currentPhase === 'victory_check' ? (
-                    <p className="mini-label">
-                      {objectiveEligible ? 'Objective conditions met.' : 'Objective conditions not met.'}
-                    </p>
-                  ) : null}
-                  {canEditVictory && objectiveEligible ? (
-                    <div className="hero-actions">
-                      <button type="button" onClick={() => handleVictoryToggle(!privateState.declaredVictory)} disabled={actionLoading}>
-                        {privateState.declaredVictory ? 'Withdraw victory attempt' : 'Declare victory attempt'}
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
 
-                <div className="hand-grid">
-                  {privateState.cards.map((card) => {
-                    const cardDefinition = getActionCard(card.definitionKey ?? getBaseCardKey(card.cardKey));
-                    const isSelected = card.cardKey === privateState.selectedCardKey;
+                  {hudPanel === 'cards' ? (
+                    <div className="overlay-scroll">
+                      {activePlayer ? (
+                        <p className="overlay-copy">
+                          {canEditSeatAction
+                            ? 'Choose one action card, lock it, and the overlay will clear back to the map.'
+                            : privateState.selectedAction
+                              ? `Locked action: ${privateState.selectedAction}.`
+                              : 'You can inspect this seat, but only the controlling player may lock an action right now.'}
+                        </p>
+                      ) : (
+                        <p className="overlay-copy">Choose a seat first to inspect its current hand.</p>
+                      )}
 
-                    return (
-                      <article key={card.cardKey} className={isSelected ? 'hand-card selected' : 'hand-card'}>
-                        <p className="mini-label">{isSelected ? 'Selected action' : 'Action card'}</p>
-                        <h3>{card.name}</h3>
-                        {(() => {
+                      <div className="hand-grid overlay-hand-grid">
+                        {privateState.cards.map((card) => {
+                          const cardDefinition = getActionCard(card.definitionKey ?? getBaseCardKey(card.cardKey));
+                          const isSelected = card.cardKey === privateState.selectedCardKey;
                           const successThreshold = evaluateFormulaForDisplay(activePlayer, cardDefinition?.formula);
                           const rollSuccessChance = getRollSuccessChance(successThreshold);
                           const requirementState = getRequirementState(cardDefinition, boardPlayers, currentEvent);
@@ -2130,14 +1916,14 @@ function App() {
                           );
 
                           return (
-                            <>
+                            <article key={card.cardKey} className={isSelected ? 'hand-card selected' : 'hand-card'}>
+                              <p className="mini-label">{isSelected ? 'Selected action' : 'Action card'}</p>
+                              <h3>{card.name}</h3>
                               <div className="odds-strip">
                                 <div className="odds-stat primary">
                                   <span className="mini-label">Success odds</span>
                                   <strong>{formatPercent(effectiveChance)}</strong>
-                                  <small>
-                                    {successThreshold != null ? `Need d10 roll >= ${successThreshold}` : 'No roll data'}
-                                  </small>
+                                  <small>{successThreshold != null ? `Need d10 roll >= ${successThreshold}` : 'No roll data'}</small>
                                 </div>
                                 <div className="odds-stat">
                                   <span className="mini-label">Base roll</span>
@@ -2163,118 +1949,448 @@ function App() {
                                   ))}
                                 </div>
                               ) : null}
-                            </>
+                              {canEditSeatAction ? (
+                                <ActionSelectionFields
+                                  card={card}
+                                  players={boardPlayers}
+                                  value={cardDrafts[card.cardKey] ?? buildDefaultSelectionPayload(cardDefinition, activePowerKey)}
+                                  onChange={(nextValue) =>
+                                    setCardDrafts((current) => ({
+                                      ...current,
+                                      [card.cardKey]: nextValue,
+                                    }))
+                                  }
+                                />
+                              ) : null}
+                              {canEditSeatAction ? (
+                                <button type="button" className="hand-action-button" onClick={() => handleSelectAction(card)}>
+                                  {isSelected ? 'Update locked action' : 'Lock this action'}
+                                </button>
+                              ) : null}
+                            </article>
                           );
-                        })()}
-                        {canEditSeatAction ? (
-                          <ActionSelectionFields
-                            card={card}
-                            players={boardPlayers}
-                            value={cardDrafts[card.cardKey] ?? buildDefaultSelectionPayload(cardDefinition, activePowerKey)}
-                            onChange={(nextValue) =>
-                              setCardDrafts((current) => ({
-                                ...current,
-                                [card.cardKey]: nextValue,
-                              }))
-                            }
-                          />
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {hudPanel === 'event' ? (
+                    <div className="overlay-scroll overlay-stack">
+                      <div className="event-panel compact">
+                        <p className="event-label">Global event</p>
+                        <h2>{currentPhase === 'choose_actions' ? 'Hidden until reveal' : currentEvent?.title ?? 'No event loaded'}</h2>
+                        <p>
+                          {currentPhase === 'choose_actions'
+                            ? 'The event is already chosen. Only the action order is public until reveal.'
+                            : currentEvent?.details ?? 'No event card is available for this board yet.'}
+                        </p>
+                        {currentPhase !== 'choose_actions' && currentEventEffects.length ? (
+                          <ul className="event-effects">
+                            {currentEventEffects.map((effect) => (
+                              <li key={effect}>{effect}</li>
+                            ))}
+                          </ul>
                         ) : null}
-                        {canEditSeatAction ? (
-                          <button type="button" className="hand-action-button" onClick={() => handleSelectAction(card)}>
-                            {isSelected ? 'Update locked action' : 'Lock this action'}
+                        <p className="mini-label">
+                          Action order: {currentOrder.map((powerKey) => boardPlayers.find((player) => player.power_key === powerKey)?.short_name ?? powerKey).join(' -> ')}
+                        </p>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {hudPanel === 'tracks' ? (
+                    <div className="overlay-scroll overlay-stack">
+                      {tracks.map((track) => (
+                        <TrackRow key={track.key} label={track.label} trackKey={track.key} players={boardPlayers} />
+                      ))}
+                    </div>
+                  ) : null}
+
+                  {hudPanel === 'objective' ? (
+                    <div className="overlay-scroll">
+                      <div className="private-objective">
+                        <div className="objective-topline">
+                          <div>
+                            <p className="mini-label">Hidden win condition</p>
+                            <h3>{parsedObjective?.title ?? 'No objective loaded'}</h3>
+                          </div>
+                          <div className="objective-scorecard">
+                            <strong>{parsedObjective ? `${objectiveMetCount}/${objectiveChecks.length}` : '0/0'}</strong>
+                            <span>criteria met</span>
+                          </div>
+                        </div>
+                        <p>{parsedObjective?.description ?? 'This seat has no private objective available for your account.'}</p>
+                        {parsedObjective ? (
+                          <div className="objective-summary-grid">
+                            <div className="objective-summary-card">
+                              <span className="mini-label">Victory path</span>
+                              <strong>{parsedObjective.outcome}</strong>
+                              <small>{objectiveRollSummary.label}</small>
+                            </div>
+                            <div className="objective-summary-card">
+                              <span className="mini-label">Win odds now</span>
+                              <strong>{formatPercent(objectiveRollSummary.chance)}</strong>
+                              <small>{objectiveEligible ? 'Based on current board state' : 'Blocked until all criteria are met'}</small>
+                            </div>
+                          </div>
+                        ) : null}
+                        {objectiveChecks.length ? (
+                          <div className="criteria-table">
+                            <div className="criteria-table-head">
+                              <span>Condition</span>
+                              <span>Current</span>
+                              <span>Status</span>
+                            </div>
+                            {objectiveChecks.map((check) => (
+                              <div className="criteria-table-row" key={check.label}>
+                                <strong>{check.label}</strong>
+                                <span>{check.current}</span>
+                                <span className={check.met ? 'status-pill met' : 'status-pill unmet'}>
+                                  {check.met ? 'Met' : 'Miss'}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                        {currentPhase === 'victory_check' ? (
+                          <p className="mini-label">
+                            {objectiveEligible ? 'Objective conditions met.' : 'Objective conditions not met.'}
+                          </p>
+                        ) : null}
+                        {canEditVictory && objectiveEligible ? (
+                          <div className="hero-actions">
+                            <button type="button" onClick={() => handleVictoryToggle(!privateState.declaredVictory)} disabled={actionLoading}>
+                              {privateState.declaredVictory ? 'Withdraw victory attempt' : 'Declare victory attempt'}
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {hudPanel === 'seats' ? (
+                    <div className="overlay-scroll overlay-stack">
+                      <div className="player-tabs overlay-seat-tabs">
+                        {(isAdmin ? boardPlayers : availableSeats).map((player) => (
+                          <button
+                            type="button"
+                            key={player.id}
+                            className={player.power_key === activePowerKey ? 'player-tab active' : 'player-tab'}
+                            style={{ '--accent': player.accent }}
+                            onClick={() => setActivePowerKey(player.power_key)}
+                          >
+                            <span>{player.short_name}</span>
+                            {player.name}
                           </button>
-                        ) : null}
-                      </article>
-                    );
-                  })}
+                        ))}
+                      </div>
+                      {!isAdmin && liveGameStatus === 'active' ? (
+                        <div className="seat-actions">
+                          <p className="mini-label">Claim or change your seat</p>
+                          <div className="seat-list">
+                            {availableSeats.map((player) => (
+                              <button
+                                type="button"
+                                key={player.id}
+                                className="seat-chip"
+                                onClick={() => handleClaimSeat(player.power_key)}
+                                disabled={actionLoading}
+                              >
+                                {player.short_name} / {player.name}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                      <div className="concealed-panel">
+                        <p className="mini-label">Lobby roster</p>
+                        {boardPlayers.map((player) => {
+                          const member = joinedPlayerByPower.get(player.power_key);
+                          return (
+                            <div className="concealed-row" key={player.id}>
+                              <strong>{player.short_name}</strong>
+                              <span>{member ? `${member.display_name} claimed this seat` : 'Open seat'}</span>
+                            </div>
+                          );
+                        })}
+                        {observerMembers.map((member) => (
+                          <div className="concealed-row" key={`${member.user_id}-observer`}>
+                            <strong>OBS</strong>
+                            <span>{member.display_name} is observing</span>
+                          </div>
+                        ))}
+                        <div className="concealed-row">
+                          <strong>Open</strong>
+                          <span>{openSeatCount} seat(s) still available</span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {hudPanel === 'log' ? (
+                    <div className="overlay-scroll overlay-stack">
+                      <div className="phase-list">
+                        {phases.map((phase) => (
+                          <article key={phase.id} className={phase.id === currentPhase ? 'active-phase' : ''}>
+                            <p className="mini-label">{phase.id === currentPhase ? 'Current stage' : 'Upcoming stage'}</p>
+                            <p>{phase.label}</p>
+                          </article>
+                        ))}
+                      </div>
+                      <div className="concealed-panel">
+                        <p className="mini-label">Action lock tracker</p>
+                        <div className="concealed-row">
+                          <strong>Ready</strong>
+                          <span>{lockedSeatCount} / {turnOrder.length} seats locked</span>
+                        </div>
+                        {turnOrder.map((powerKey) => {
+                          const player = boardPlayers.find((entry) => entry.power_key === powerKey);
+                          const revealedAction = revealedActions[powerKey];
+                          const isLocked = Boolean(selectedCardKeysByPower[powerKey]);
+
+                          if (!player) {
+                            return null;
+                          }
+
+                          let label = 'Waiting';
+
+                          if (revealedAction) {
+                            label = `${revealedAction.cardName} — ${revealedAction.outcome}`;
+                          } else if (currentPhase === 'choose_actions' || currentPhase === 'resolve_event') {
+                            label = isLocked ? 'Locked in' : 'Still choosing';
+                          } else if (isLocked) {
+                            label = 'Face-down';
+                          }
+
+                          return (
+                            <div className="concealed-row" key={player.id}>
+                              <strong>{player.short_name}</strong>
+                              <span>{label}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="concealed-panel">
+                        <p className="mini-label">Public log</p>
+                        {publicLog.length ? (
+                          publicLog.map((entry, index) => (
+                            <div className="concealed-row" key={`${entry}-${index}`}>
+                              <strong>{index + 1}</strong>
+                              <span>{entry}</span>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="concealed-row">
+                            <strong>0</strong>
+                            <span>No public log entries yet.</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
+                </section>
+              </div>
+            ) : null}
+
+            <footer className="status-bar">
+              <div className="status-bar-copy">
+                <p className="eyebrow">Table status</p>
+                <h2>{tableHeadline}</h2>
+                <p>{errorMessage || tableSubline || statusMessage}</p>
+              </div>
+              <div className="status-bar-meta">
+                <div className="status-readout">
+                  <span>Phase</span>
+                  <strong>{currentPhaseDefinition.label}</strong>
+                </div>
+                <div className="status-readout">
+                  <span>Current turn</span>
+                  <strong>{currentTurnPlayer ? currentTurnPlayer.name : winner ? winner.name : 'No active turn'}</strong>
+                </div>
+                <div className="status-readout">
+                  <span>Event</span>
+                  <strong>{currentPhase === 'choose_actions' ? 'Hidden until reveal' : currentEvent?.title ?? 'None'}</strong>
+                </div>
+                <div className="hero-actions">
+                  <button type="button" onClick={handleAdvanceFlow} disabled={!canAdvanceFlow}>
+                    {advanceFlowLabel}
+                  </button>
+                  {canManageGame ? (
+                    <button type="button" className="ghost" onClick={handleCompleteGame} disabled={actionLoading}>
+                      {liveGameStatus === 'completed' ? 'Reopen game' : 'Complete game'}
+                    </button>
+                  ) : null}
+                  {isAdmin ? (
+                    <button type="button" className="ghost" onClick={handleDeleteGame} disabled={actionLoading}>
+                      Delete game
+                    </button>
+                  ) : null}
                 </div>
               </div>
+            </footer>
+          </section>
+        ) : (
+          <>
+            <section className="topbar">
+              <div className="topbar-copy">
+                <p className="eyebrow">Competing Futures / game lobby</p>
+                <h1>{activeGame?.name ?? 'Your game lobby'}</h1>
+                <p className="mini-label">
+                  Signed in as {getDisplayName(profile, session.user)} / {profile?.app_role ?? 'player'}
+                </p>
+              </div>
+
+              <div className="topbar-status">
+                <div className="status-chip">
+                  <span>Active games</span>
+                  <strong>{activeGames.length}</strong>
+                </div>
+                <div className="status-chip event">
+                  <span>Past games</span>
+                  <strong>{pastGames.length}</strong>
+                </div>
+                <div className="status-chip">
+                  <span>Seat</span>
+                  <strong>{activeMembership?.power_key ?? activeMembership?.membership_role ?? 'none'}</strong>
+                </div>
+                <div className="hero-actions">
+                  <button type="button" className="ghost" onClick={signOut}>
+                    Sign out
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section className="lower-grid overview-grid">
+              <aside className="selector-panel">
+                <div className="section-heading">
+                  <p className="eyebrow">Create or join</p>
+                  <h2>Launch a lobby or enter one with a six-letter code</h2>
+                </div>
+
+                <form className="form-panel" onSubmit={handleCreateGame}>
+                  <label className="form-label" htmlFor="game-name">
+                    New game name
+                  </label>
+                  <input
+                    id="game-name"
+                    className="input-control"
+                    value={createGameName}
+                    onChange={(event) => setCreateGameName(event.target.value)}
+                    placeholder="Spring strategy session"
+                    required
+                  />
+                  <label className="form-label" htmlFor="create-seat">
+                    Claim a seat now
+                  </label>
+                  <select
+                    id="create-seat"
+                    className="input-control"
+                    value={createSeatKey}
+                    onChange={(event) => setCreateSeatKey(event.target.value)}
+                  >
+                    <option value="">Join as observer</option>
+                    {powerOptions.map((power) => (
+                      <option key={power.id} value={power.id}>
+                        {power.shortName} / {power.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button type="submit" disabled={actionLoading}>
+                    {actionLoading ? 'Working...' : 'Create game'}
+                  </button>
+                </form>
+
+                <form className="form-panel" onSubmit={handleJoinGame}>
+                  <label className="form-label" htmlFor="join-code">
+                    Six-letter join code
+                  </label>
+                  <input
+                    id="join-code"
+                    className="input-control code-input"
+                    value={joinCode}
+                    onChange={(event) => setJoinCode(event.target.value.toUpperCase())}
+                    placeholder="ABC123"
+                    required
+                  />
+                  <label className="form-label" htmlFor="join-seat">
+                    Claim a seat on join
+                  </label>
+                  <select
+                    id="join-seat"
+                    className="input-control"
+                    value={joinSeatKey}
+                    onChange={(event) => setJoinSeatKey(event.target.value)}
+                  >
+                    <option value="">Join as observer</option>
+                    {powerOptions.map((power) => (
+                      <option key={power.id} value={power.id}>
+                        {power.shortName} / {power.name}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mini-label">
+                    Ask the host for the code shown on the selected game card. If every actor seat is filled, the join will be rejected.
+                  </p>
+                  <button type="submit" disabled={actionLoading}>
+                    {actionLoading ? 'Working...' : 'Join game'}
+                  </button>
+                </form>
+              </aside>
+
+              <section className="board-panel board-panel-wide">
+                <div className="dashboard-stack">
+                  <GameList
+                    title="Active games"
+                    games={activeGames}
+                    memberships={memberships}
+                    selectedGameId={selectedGameId}
+                    onSelect={setSelectedGameId}
+                    emptyMessage="No active games yet."
+                  />
+                  <GameList
+                    title="Past games you played"
+                    games={pastGames}
+                    memberships={memberships}
+                    selectedGameId={selectedGameId}
+                    onSelect={setSelectedGameId}
+                    emptyMessage="Finished games will appear here."
+                  />
+                </div>
+              </section>
 
               <aside className="info-panel">
                 <div className="section-heading">
-                  <p className="eyebrow">Table rhythm</p>
-                  <h2>Round flow, reveals, and public log</h2>
+                  <p className="eyebrow">Selected game</p>
+                  <h2>What to share and where to go next</h2>
                 </div>
-                <div className="phase-list">
-                  {phases.map((phase) => (
-                    <article key={phase.id} className={phase.id === currentPhase ? 'active-phase' : ''}>
-                      <p className="mini-label">{phase.id === currentPhase ? 'Current stage' : 'Upcoming stage'}</p>
-                      <p>{phase.label}</p>
-                    </article>
-                  ))}
+                <div className="event-panel compact">
+                  <p className="event-label">Lobby status</p>
+                  <h2>{activeGame?.status ?? 'No game selected'}</h2>
+                  <p>{errorMessage || statusMessage}</p>
+                  <p className="mini-label">
+                    {liveJoinCode ? `Join code: ${liveJoinCode}` : 'Create or join a game to continue.'}
+                  </p>
                 </div>
-                <div className="concealed-panel">
-                  <p className="mini-label">Round state</p>
-                  <div className="concealed-row">
-                    <strong>Current phase</strong>
-                    <span>{currentPhaseDefinition.label}</span>
-                  </div>
-                  <div className="concealed-row">
-                    <strong>Current event</strong>
-                    <span>{currentPhase === 'choose_actions' ? 'Hidden until reveal' : currentEvent?.title ?? 'None'}</span>
-                  </div>
-                  <div className="concealed-row">
-                    <strong>Current turn</strong>
-                    <span>{currentTurnPlayer ? currentTurnPlayer.name : winner ? winner.name : 'No active turn'}</span>
-                  </div>
-                  <div className="concealed-row">
-                    <strong>Winner</strong>
-                    <span>{winner?.name ?? 'No winner yet'}</span>
-                  </div>
+                <div className="event-panel compact">
+                  <p className="event-label">How players join</p>
+                  <h2>{liveJoinCode || 'Select a game first'}</h2>
+                  <p>
+                    Select a game from the center column, copy its join code, then tell players to paste that code into the Join game form on the left.
+                  </p>
+                  <p className="mini-label">Select an active game to enter the map-first play surface.</p>
                 </div>
-                <div className="concealed-panel">
-                  <p className="mini-label">Action lock tracker</p>
-                  <div className="concealed-row">
-                    <strong>Ready</strong>
-                    <span>{lockedSeatCount} / {turnOrder.length} seats locked</span>
+                {activeMembership ? (
+                  <div className="hero-actions">
+                    <button type="button" className="ghost" onClick={handleLeaveGame} disabled={actionLoading}>
+                      Leave game
+                    </button>
                   </div>
-                  {turnOrder.map((powerKey) => {
-                    const player = boardPlayers.find((entry) => entry.power_key === powerKey);
-                    const revealedAction = revealedActions[powerKey];
-                    const isLocked = Boolean(selectedCardKeysByPower[powerKey]);
-
-                    if (!player) {
-                      return null;
-                    }
-
-                    let label = 'Waiting';
-
-                    if (revealedAction) {
-                      label = `${revealedAction.cardName} — ${revealedAction.outcome}`;
-                    } else if (currentPhase === 'choose_actions' || currentPhase === 'resolve_event') {
-                      label = isLocked ? 'Locked in' : 'Still choosing';
-                    } else if (isLocked) {
-                      label = 'Face-down';
-                    }
-
-                    return (
-                      <div className="concealed-row" key={player.id}>
-                        <strong>{player.short_name}</strong>
-                        <span>{label}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="concealed-panel">
-                  <p className="mini-label">Public log</p>
-                  {publicLog.length ? (
-                    publicLog.map((entry, index) => (
-                      <div className="concealed-row" key={`${entry}-${index}`}>
-                        <strong>{index + 1}</strong>
-                        <span>{entry}</span>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="concealed-row">
-                      <strong>0</strong>
-                      <span>No public log entries yet.</span>
-                    </div>
-                  )}
-                </div>
+                ) : null}
               </aside>
             </section>
           </>
-        ) : null}
+        )}
       </main>
     </>
   );
