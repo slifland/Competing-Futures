@@ -984,7 +984,7 @@ function App() {
         setGames(data.games);
         setMemberships(data.memberships);
 
-        if (!data.games.some((game) => game.id === selectedGameId)) {
+        if (selectedGameId && !data.games.some((game) => game.id === selectedGameId)) {
           setSelectedGameId(data.games[0]?.id ?? '');
         }
 
@@ -1296,34 +1296,6 @@ function App() {
       return;
     }
   }, [activeGame, announcementKey, boardPlayers, currentEvent, currentOrder, currentPhase, gameState, winner]);
-
-  const hudAutoKey = activeGame ? `${activeGame.id}:${gameState?.round ?? 0}:${currentPhase}` : '';
-
-  React.useEffect(() => {
-    if (!activeGame || !gameState) {
-      setHudPanel(null);
-      return;
-    }
-
-    if (currentPhase === 'choose_actions') {
-      setHudPanel('cards');
-      return;
-    }
-
-    if (currentPhase === 'resolve_event') {
-      setHudPanel('event');
-      return;
-    }
-
-    if (currentPhase === 'resolve_actions') {
-      setHudPanel('log');
-      return;
-    }
-
-    if (currentPhase === 'victory_check') {
-      setHudPanel('objective');
-    }
-  }, [activeGame?.id, currentPhase, gameState?.round, hudAutoKey]);
 
   async function signInWithGoogle() {
     if (!supabase) {
@@ -1794,73 +1766,61 @@ function App() {
       <main className={activeGameReady ? 'shell in-game' : 'shell'}>
         {activeGameReady ? (
           <section className="game-surface">
-            <div className="game-surface-map" aria-hidden="true">
-              <img className="board-map-image" src={worldMap} alt="" />
-              <div className="grid-lines" />
-              {boardPlayers.map((player) => (
-                <div
-                  key={player.id}
-                  className={`board-piece ${player.home_class}${player.power_key === activePowerKey ? ' active' : ''}`}
-                  style={{ '--accent': player.accent }}
-                >
-                  <span>{player.short_name}</span>
-                  <small>{player.name}</small>
-                </div>
-              ))}
-            </div>
-
-            <header className="game-topbar">
-              <div>
-                <p className="eyebrow">Competing Futures / live board</p>
-                <h1>{activeGame.name}</h1>
-                <p className="mini-label">
-                  Signed in as {getDisplayName(profile, session.user)} / {profile?.app_role ?? 'player'}
-                </p>
+            <div className="game-stage">
+              <div className="game-surface-map" aria-hidden="true">
+                <img className="board-map-image" src={worldMap} alt="" />
+                <div className="grid-lines" />
               </div>
-              <div className="game-topbar-actions">
-                <div className="game-meta">
-                  <span>Round {gameState.round}</span>
-                  <span>{currentPhaseDefinition.label}</span>
-                  <span>{liveJoinCode ? `Join code ${liveJoinCode}` : 'Join code pending'}</span>
+
+              <header className="game-topbar">
+                <div>
+                  <p className="eyebrow">Competing Futures / live board</p>
+                  <h1>{activeGame.name}</h1>
                 </div>
-                <div className="hero-actions">
-                  <button type="button" className="ghost" onClick={() => setSelectedGameId('')}>
-                    Back to lobby
-                  </button>
-                  {activeMembership ? (
-                    <button type="button" className="ghost" onClick={handleLeaveGame} disabled={actionLoading}>
-                      Leave game
+                <div className="game-topbar-actions">
+                  <div className="game-meta">
+                    <span>Round {gameState.round}</span>
+                    <span>{currentPhaseDefinition.label}</span>
+                    <span>{liveJoinCode ? `Join code ${liveJoinCode}` : 'Join code pending'}</span>
+                  </div>
+                  <div className="hero-actions">
+                    <button type="button" className="ghost" onClick={() => setSelectedGameId('')}>
+                      Back to lobby
                     </button>
-                  ) : null}
-                  <button type="button" className="ghost" onClick={signOut}>
-                    Sign out
-                  </button>
+                    {activeMembership ? (
+                      <button type="button" className="ghost" onClick={handleLeaveGame} disabled={actionLoading}>
+                        Leave game
+                      </button>
+                    ) : null}
+                    <button type="button" className="ghost" onClick={signOut}>
+                      Sign out
+                    </button>
+                  </div>
                 </div>
+              </header>
+
+              <div className="hud-dock" aria-label="Game overlays">
+                {dockButtons.map((button) => (
+                  <button
+                    type="button"
+                    key={button.key}
+                    className={hudPanel === button.key ? 'hud-dock-button active' : 'hud-dock-button'}
+                    onClick={() => setHudPanel((current) => (current === button.key ? null : button.key))}
+                  >
+                    <strong>{button.badge}</strong>
+                    <span>{button.label}</span>
+                  </button>
+                ))}
               </div>
-            </header>
 
-            <div className="hud-dock" aria-label="Game overlays">
-              {dockButtons.map((button) => (
-                <button
-                  type="button"
-                  key={button.key}
-                  className={hudPanel === button.key ? 'hud-dock-button active' : 'hud-dock-button'}
-                  onClick={() => setHudPanel((current) => (current === button.key ? null : button.key))}
-                >
-                  <strong>{button.badge}</strong>
-                  <span>{button.label}</span>
-                </button>
-              ))}
-            </div>
-
-            {hudPanel ? (
-              <div className="game-overlay-layer" role="presentation" onClick={() => setHudPanel(null)}>
-                <section
-                  className="game-overlay-card"
-                  role="dialog"
-                  aria-modal="false"
-                  onClick={(event) => event.stopPropagation()}
-                >
+              {hudPanel ? (
+                <div className="game-overlay-layer" role="presentation" onClick={() => setHudPanel(null)}>
+                  <section
+                    className="game-overlay-card"
+                    role="dialog"
+                    aria-modal="false"
+                    onClick={(event) => event.stopPropagation()}
+                  >
                   <div className="game-overlay-head">
                     <div>
                       <p className="eyebrow">Overlay</p>
@@ -2188,9 +2148,10 @@ function App() {
                       </div>
                     </div>
                   ) : null}
-                </section>
-              </div>
-            ) : null}
+                  </section>
+                </div>
+              ) : null}
+            </div>
 
             <footer className="status-bar">
               <div className="status-bar-copy">
