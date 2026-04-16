@@ -16,6 +16,7 @@ import {
 import {
   claimSeat,
   createGame,
+  deleteGame,
   fetchAccountContext,
   fetchGameBoard,
   fetchPrivateSeat,
@@ -1333,6 +1334,42 @@ function App() {
     }
   }
 
+  async function handleDeleteGame() {
+    if (!activeGame || !isAdmin) {
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete "${activeGame.name}"? This cannot be undone.`);
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setActionLoading(true);
+      setErrorMessage('');
+      await deleteGame(activeGame.id);
+      setSelectedGameId('');
+      setGameState(null);
+      setActivePowerKey('');
+      setPrivateState({
+        objective: '',
+        selectedAction: '',
+        selectedCardKey: '',
+        selectedActionPayload: {},
+        declaredVictory: false,
+        secretState: {},
+        cards: [],
+      });
+      setRefreshKey((current) => current + 1);
+      setStatusMessage(`Deleted ${activeGame.name}.`);
+    } catch (error) {
+      setErrorMessage(error.message);
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
   async function handleSelectAction(card) {
     if (!canEditSeatAction || !activePlayer) {
       return;
@@ -1716,6 +1753,11 @@ function App() {
                   {canManageGame ? (
                     <button type="button" className="ghost" onClick={handleCompleteGame} disabled={actionLoading}>
                       {activeGame.status === 'completed' ? 'Reopen game' : 'Complete game'}
+                    </button>
+                  ) : null}
+                  {isAdmin ? (
+                    <button type="button" className="ghost" onClick={handleDeleteGame} disabled={actionLoading}>
+                      Delete game
                     </button>
                   ) : null}
                 </div>

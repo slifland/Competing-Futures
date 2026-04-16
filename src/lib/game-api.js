@@ -376,6 +376,15 @@ export async function updateGameStatus(gameId, status) {
   }
 }
 
+export async function deleteGame(gameId) {
+  const client = getSupabaseClient();
+  const { error } = await client.from('games').delete().eq('id', gameId);
+
+  if (error) {
+    throw error;
+  }
+}
+
 export async function persistGameState({ gameId, gameUpdate, players, managerState }) {
   const client = getSupabaseClient();
   const { error: gameError } = await client.from('games').update(gameUpdate).eq('id', gameId);
