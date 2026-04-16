@@ -175,6 +175,13 @@ export async function fetchAccountContext(user) {
 export async function fetchGameBoard(gameId, options = {}) {
   const client = getSupabaseClient();
   const includePrivateState = options.includePrivateState ?? false;
+  const gameQuery = client
+    .from('games')
+    .select(
+      'id, name, status, join_code, round, phase, current_turn_index, winner_power_key, engine_state, created_by, completed_at',
+    )
+    .eq('id', gameId)
+    .maybeSingle();
 
   const playersQuery = client
     .from('players')
@@ -182,10 +189,13 @@ export async function fetchGameBoard(gameId, options = {}) {
     .eq('game_id', gameId)
     .order('name');
 
-  const membershipsQuery = client
-    .from('game_memberships')
-    .select('game_id, user_id, membership_role, power_key, updated_at')
-    .eq('game_id', gameId);
+  const lobbyMembersQuery = client.rpc('list_game_lobby_members', {
+    target_game_id_input: gameId,
+  });
+
+  const actionLocksQuery = client.rpc('list_action_lock_status', {
+    target_game_id_input: gameId,
+  });
 
   const privateStateQuery = includePrivateState
     ? client
@@ -205,22 +215,37 @@ export async function fetchGameBoard(gameId, options = {}) {
     : Promise.resolve({ data: [], error: null });
 
   const [
+    { data: gameData, error: gameError },
     { data: playersData, error: playersError },
-    { data: membershipsData, error: membershipsError },
+    { data: lobbyMembersData, error: lobbyMembersError },
+    { data: actionLocksData, error: actionLocksError },
     privateStateResult,
     handResult,
-  ] = await Promise.all([playersQuery, membershipsQuery, privateStateQuery, handQuery]);
+  ] = await Promise.all([gameQuery, playersQuery, lobbyMembersQuery, actionLocksQuery, privateStateQuery, handQuery]);
 
   const { data: privateStateRows, error: privateStateError } = privateStateResult;
   const { data: handRows, error: handError } = handResult;
 
-  if (playersError || membershipsError || privateStateError || handError) {
-    throw getSchemaSetupError(playersError || membershipsError || privateStateError || handError);
+  if (gameError || playersError || lobbyMembersError || actionLocksError || privateStateError || handError) {
+    throw getSchemaSetupError(
+      gameError || playersError || lobbyMembersError || actionLocksError || privateStateError || handError,
+    );
   }
 
   return {
+    game: gameData
+      ? {
+          ...gameData,
+          engineState: gameData.engine_state ?? {},
+        }
+      : null,
     players: (playersData ?? []).map(mapDbPlayer),
-    assignments: membershipsData ?? [],
+    lobbyMembers: lobbyMembersData ?? [],
+    actionLocks:
+      (actionLocksData ?? []).reduce((accumulator, row) => {
+        accumulator[row.power_key] = Boolean(row.locked);
+        return accumulator;
+      }, {}) ?? {},
     managerState: includePrivateState ? buildManagerState(privateStateRows ?? [], handRows ?? []) : null,
   };
 }
@@ -353,6 +378,19 @@ export async function claimSeat(gameId, powerKey) {
   const { data, error } = await client.rpc('claim_game_seat', {
     target_game_id_input: gameId,
     target_power_key_input: powerKey,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+}
+
+export async function leaveGame(gameId) {
+  const client = getSupabaseClient();
+  const { data, error } = await client.rpc('leave_game', {
+    target_game_id_input: gameId,
   });
 
   if (error) {

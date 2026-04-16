@@ -23,6 +23,7 @@ import {
   gameNeedsRulesInitialization,
   initializeGameFromRules,
   joinGameByCode,
+  leaveGame,
   persistGameState,
   setVictoryDeclaration,
   updateGameStatus,
@@ -123,6 +124,7 @@ function GameList({ title, games, memberships, selectedGameId, onSelect, emptyMe
               >
                 <strong>{game.name}</strong>
                 <span>{game.status}</span>
+                <small>{game.join_code ? `Join code: ${game.join_code}` : 'Join code pending'}</small>
                 <small>
                   {membership?.power_key
                     ? `Seat: ${membership.power_key}`
@@ -287,6 +289,16 @@ const TRACK_SHORT_LABELS = {
   safety: 'Safe',
   publicSupport: 'Support',
 };
+const EMPTY_PRIVATE_STATE = {
+  objective: '',
+  selectedAction: '',
+  selectedCardKey: '',
+  selectedActionPayload: {},
+  declaredVictory: false,
+  secretState: {},
+  cards: [],
+};
+const WALKTHROUGH_STORAGE_KEY = 'cf-lobby-walkthrough-dismissed';
 
 function buildDisplayContext(players, selfPowerKey = null) {
   const playerMap = new Map(players.map((player) => [player.power_key, player]));
@@ -866,18 +878,11 @@ function App() {
   const [memberships, setMemberships] = React.useState([]);
   const [selectedGameId, setSelectedGameId] = React.useState('');
   const [refreshKey, setRefreshKey] = React.useState(0);
+  const [boardRefreshTick, setBoardRefreshTick] = React.useState(0);
   const [gameState, setGameState] = React.useState(null);
   const [waitingOnPlayers, setWaitingOnPlayers] = React.useState([]);
   const [activePowerKey, setActivePowerKey] = React.useState('');
-  const [privateState, setPrivateState] = React.useState({
-    objective: '',
-    selectedAction: '',
-    selectedCardKey: '',
-    selectedActionPayload: {},
-    declaredVictory: false,
-    secretState: {},
-    cards: [],
-  });
+  const [privateState, setPrivateState] = React.useState(EMPTY_PRIVATE_STATE);
   const [cardDrafts, setCardDrafts] = React.useState({});
   const [createGameName, setCreateGameName] = React.useState('');
   const [createSeatKey, setCreateSeatKey] = React.useState('');
@@ -885,6 +890,15 @@ function App() {
   const [joinSeatKey, setJoinSeatKey] = React.useState('');
   const [statusMessage, setStatusMessage] = React.useState('Checking Supabase session...');
   const [errorMessage, setErrorMessage] = React.useState('');
+  const [announcement, setAnnouncement] = React.useState(null);
+  const seenAnnouncementsRef = React.useRef(new Set());
+  const [walkthroughDismissed, setWalkthroughDismissed] = React.useState(() => {
+    if (typeof window === 'undefined') {
+      return false;
+    }
+
+    return window.localStorage.getItem(WALKTHROUGH_STORAGE_KEY) === 'true';
+  });
 
   React.useEffect(() => {
     let isMounted = true;
@@ -947,15 +961,7 @@ function App() {
       setSelectedGameId('');
       setGameState(null);
       setActivePowerKey('');
-      setPrivateState({
-        objective: '',
-        selectedAction: '',
-        selectedCardKey: '',
-        selectedActionPayload: {},
-        declaredVictory: false,
-        secretState: {},
-        cards: [],
-      });
+      setPrivateState(EMPTY_PRIVATE_STATE);
       setStatusMessage(authReady ? 'Sign in to load your game access.' : 'Checking Supabase session...');
       return;
     }
@@ -1006,6 +1012,30 @@ function App() {
   const canManageGame = Boolean(isAdmin || (activeGame && session?.user && activeGame.created_by === session.user.id));
 
   React.useEffect(() => {
+    if (!session?.user) {
+      return undefined;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setRefreshKey((current) => current + 1);
+    }, 8000);
+
+    return () => window.clearInterval(intervalId);
+  }, [session?.user]);
+
+  React.useEffect(() => {
+    if (!session?.user || !activeGame) {
+      return undefined;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setBoardRefreshTick((current) => current + 1);
+    }, 2000);
+
+    return () => window.clearInterval(intervalId);
+  }, [activeGame, session?.user]);
+
+  React.useEffect(() => {
     if (!session?.user || !activeGame) {
       setGameState(null);
       setActivePowerKey('');
@@ -1041,11 +1071,13 @@ function App() {
 
         setGameState({
           ...board,
-          round: activeGame.round,
-          phase: activeGame.phase ?? 'choose_actions',
-          currentTurnIndex: activeGame.current_turn_index ?? 0,
-          winnerPowerKey: activeGame.winner_power_key ?? null,
-          engineState: activeGame.engineState ?? {},
+          round: board.game?.round ?? activeGame.round,
+          phase: board.game?.phase ?? activeGame.phase ?? 'choose_actions',
+          currentTurnIndex: board.game?.current_turn_index ?? activeGame.current_turn_index ?? 0,
+          winnerPowerKey: board.game?.winner_power_key ?? activeGame.winner_power_key ?? null,
+          engineState: board.game?.engineState ?? activeGame.engineState ?? {},
+          status: board.game?.status ?? activeGame.status,
+          joinCode: board.game?.join_code ?? activeGame.join_code,
         });
         setActivePowerKey(nextPowerKey);
         setStatusMessage(`Loaded ${activeGame.name}.`);
@@ -1063,22 +1095,16 @@ function App() {
     return () => {
       isMounted = false;
     };
-  }, [activeGame, activeMembership?.power_key, activePowerKey, canManageGame, isAdmin, session?.user]);
+  }, [activeGame, activeMembership?.power_key, activePowerKey, boardRefreshTick, canManageGame, isAdmin, session?.user]);
 
   const boardPlayers = gameState?.players ?? [];
+  const liveGameStatus = gameState?.status ?? activeGame?.status ?? 'active';
+  const liveJoinCode = gameState?.joinCode ?? activeGame?.join_code ?? '';
   const activePlayer = boardPlayers.find((player) => player.power_key === activePowerKey) ?? null;
 
   React.useEffect(() => {
     if (!session?.user || !gameState || !activePowerKey) {
-      setPrivateState({
-        objective: '',
-        selectedAction: '',
-        selectedCardKey: '',
-        selectedActionPayload: {},
-        declaredVictory: false,
-        secretState: {},
-        cards: [],
-      });
+      setPrivateState(EMPTY_PRIVATE_STATE);
       return;
     }
 
@@ -1116,15 +1142,7 @@ function App() {
           return;
         }
 
-        setPrivateState({
-          objective: '',
-          selectedAction: '',
-          selectedCardKey: '',
-          selectedActionPayload: {},
-          declaredVictory: false,
-          secretState: {},
-          cards: [],
-        });
+        setPrivateState(EMPTY_PRIVATE_STATE);
         setErrorMessage(error.message);
       }
     }
@@ -1166,15 +1184,18 @@ function App() {
   const winner = boardPlayers.find((player) => player.power_key === gameState?.winnerPowerKey) ?? null;
   const revealedActions = gameState?.engineState?.revealedActions ?? {};
   const publicLog = gameState?.engineState?.publicLog ?? [];
+  const lobbyMembers = gameState?.lobbyMembers ?? [];
+  const actionLocks = gameState?.actionLocks ?? {};
+  const joinedPlayers = lobbyMembers.filter((member) => member.membership_role === 'player' && member.power_key);
+  const observerMembers = lobbyMembers.filter((member) => member.membership_role === 'observer');
+  const joinedPlayerByPower = new Map(joinedPlayers.map((member) => [member.power_key, member]));
   const takenPowerKeys = new Set(
-    (gameState?.assignments ?? [])
-      .filter((assignment) => assignment.user_id !== session?.user?.id)
-      .map((assignment) => assignment.power_key)
-      .filter(Boolean),
+    joinedPlayers.map((member) => member.power_key).filter(Boolean),
   );
   const availableSeats = boardPlayers.filter(
     (player) => !takenPowerKeys.has(player.power_key) || player.power_key === activeMembership?.power_key,
   );
+  const openSeatCount = boardPlayers.length - joinedPlayers.length;
   const activeGames = games.filter((game) => game.status === 'active');
   const pastGames = games.filter((game) => game.status !== 'active');
   const canEditSeatAction = Boolean(
@@ -1203,7 +1224,9 @@ function App() {
   );
 
   const selectedCardKeysByPower = React.useMemo(() => {
-    const next = {};
+    const next = Object.fromEntries(
+      turnOrder.map((powerKey) => [powerKey, actionLocks[powerKey] ? '__locked__' : '']),
+    );
 
     if (gameState?.managerState) {
       for (const powerKey of turnOrder) {
@@ -1216,7 +1239,62 @@ function App() {
     }
 
     return next;
-  }, [activePowerKey, gameState?.managerState, privateState.selectedCardKey]);
+  }, [actionLocks, activePowerKey, gameState?.managerState, privateState.selectedCardKey]);
+  const lockedSeatCount = turnOrder.filter((powerKey) => Boolean(selectedCardKeysByPower[powerKey])).length;
+  const walkthroughSteps = [
+    'Pick a game from the Active games list above. The actual board appears below under Shared board.',
+    'Share the six-letter join code with other players. They can paste it into Join game to enter the lobby.',
+    'Claim a seat if one is open. Once all five actor seats are filled, additional joins are blocked.',
+    'During Choose Actions, watch the lock tracker to see who is ready before advancing the round.',
+  ];
+  const announcementKey = activeGame ? `${activeGame.id}:${gameState?.round ?? 0}:${currentPhase}` : '';
+
+  React.useEffect(() => {
+    if (!activeGame || !gameState) {
+      setAnnouncement(null);
+      return;
+    }
+
+    const seenAnnouncements = seenAnnouncementsRef.current;
+
+    if (seenAnnouncements.has(announcementKey)) {
+      return;
+    }
+
+    if (currentPhase === 'resolve_event' && currentEvent) {
+      setAnnouncement({
+        title: `Global event: ${currentEvent.title}`,
+        body:
+          currentEvent.details ??
+          'The event has been revealed. Read this summary before the round continues.',
+        meta: `Round ${gameState.round} / Global Event Phase`,
+      });
+      seenAnnouncements.add(announcementKey);
+      return;
+    }
+
+    if (currentPhase === 'resolve_actions') {
+      setAnnouncement({
+        title: `Round ${gameState.round} action resolution`,
+        body: `Players now reveal actions in this order: ${currentOrder
+          .map((powerKey) => boardPlayers.find((player) => player.power_key === powerKey)?.short_name ?? powerKey)
+          .join(' -> ')}.`,
+        meta: 'Actions are public now. Watch the log and lock tracker as each seat resolves.',
+      });
+      seenAnnouncements.add(announcementKey);
+      return;
+    }
+
+    if (currentPhase === 'victory_check') {
+      setAnnouncement({
+        title: `Round ${gameState.round} victory check`,
+        body: 'Action resolution is complete. Check the board, hidden objectives, and any victory declarations before continuing.',
+        meta: winner ? `${winner.name} has already been determined as the winner.` : 'No winner is locked yet.',
+      });
+      seenAnnouncements.add(announcementKey);
+      return;
+    }
+  }, [activeGame, announcementKey, boardPlayers, currentEvent, currentOrder, currentPhase, gameState, winner]);
 
   async function signInWithGoogle() {
     if (!supabase) {
@@ -1254,6 +1332,13 @@ function App() {
 
     setSelectedGameId('');
     setAuthLoading(false);
+  }
+
+  function dismissWalkthrough() {
+    setWalkthroughDismissed(true);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(WALKTHROUGH_STORAGE_KEY, 'true');
+    }
   }
 
   async function handleCreateGame(event) {
@@ -1322,10 +1407,10 @@ function App() {
     try {
       setActionLoading(true);
       setErrorMessage('');
-      await updateGameStatus(activeGame.id, activeGame.status === 'completed' ? 'active' : 'completed');
+      await updateGameStatus(activeGame.id, liveGameStatus === 'completed' ? 'active' : 'completed');
       setRefreshKey((current) => current + 1);
       setStatusMessage(
-        activeGame.status === 'completed' ? 'Game moved back to active.' : 'Game marked as completed.',
+        liveGameStatus === 'completed' ? 'Game moved back to active.' : 'Game marked as completed.',
       );
     } catch (error) {
       setErrorMessage(error.message);
@@ -1352,17 +1437,40 @@ function App() {
       setSelectedGameId('');
       setGameState(null);
       setActivePowerKey('');
-      setPrivateState({
-        objective: '',
-        selectedAction: '',
-        selectedCardKey: '',
-        selectedActionPayload: {},
-        declaredVictory: false,
-        secretState: {},
-        cards: [],
-      });
+      setPrivateState(EMPTY_PRIVATE_STATE);
       setRefreshKey((current) => current + 1);
       setStatusMessage(`Deleted ${activeGame.name}.`);
+    } catch (error) {
+      setErrorMessage(error.message);
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function handleLeaveGame() {
+    if (!activeGame || !activeMembership) {
+      return;
+    }
+
+    const seatLabel = activeMembership.power_key
+      ? ` and release ${activeMembership.power_key}`
+      : '';
+    const confirmed = window.confirm(`Leave "${activeGame.name}"${seatLabel}?`);
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setActionLoading(true);
+      setErrorMessage('');
+      await leaveGame(activeGame.id);
+      setSelectedGameId('');
+      setGameState(null);
+      setActivePowerKey('');
+      setPrivateState(EMPTY_PRIVATE_STATE);
+      setRefreshKey((current) => current + 1);
+      setStatusMessage(`You left ${activeGame.name}.`);
     } catch (error) {
       setErrorMessage(error.message);
     } finally {
@@ -1465,12 +1573,20 @@ function App() {
       });
 
       if (nextState.blocked?.length) {
-        setWaitingOnPlayers(
-          nextState.blocked
-            .map((powerKey) => boardPlayers.find((player) => player.power_key === powerKey))
-            .filter(Boolean),
+        const missingPlayers = nextState.blocked
+          .map((powerKey) => boardPlayers.find((player) => player.power_key === powerKey))
+          .filter(Boolean);
+        setWaitingOnPlayers(missingPlayers);
+        setAnnouncement({
+          title: 'Still waiting on action locks',
+          body: `The round cannot advance yet. Missing locks: ${missingPlayers
+            .map((player) => player.short_name)
+            .join(', ')}.`,
+          meta: 'Each active seat must lock one card before the event can be revealed.',
+        });
+        setStatusMessage(
+          `Waiting on action choices from ${missingPlayers.map((player) => player.name).join(', ')}.`,
         );
-        setStatusMessage('Waiting on action choices before the event can be revealed.');
         return;
       }
 
@@ -1548,6 +1664,26 @@ function App() {
 
   return (
     <>
+      {announcement ? (
+        <div className="modal-overlay" role="presentation" onClick={() => setAnnouncement(null)}>
+          <section
+            className="modal-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="announcement-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <p className="eyebrow">Game update</p>
+            <h2 id="announcement-title">{announcement.title}</h2>
+            <p className="modal-copy">{announcement.body}</p>
+            <p className="mini-label">{announcement.meta}</p>
+            <button type="button" className="auth-button" onClick={() => setAnnouncement(null)}>
+              Continue
+            </button>
+          </section>
+        </div>
+      ) : null}
+
       {waitingOnPlayers.length ? (
         <div className="modal-overlay" role="presentation" onClick={() => setWaitingOnPlayers([])}>
           <section
@@ -1610,7 +1746,7 @@ function App() {
           <aside className="selector-panel">
             <div className="section-heading">
               <p className="eyebrow">Create or join</p>
-              <h2>Launch a new game or join with a code</h2>
+              <h2>Launch a lobby or enter one with a six-letter code</h2>
             </div>
 
             <form className="form-panel" onSubmit={handleCreateGame}>
@@ -1648,7 +1784,7 @@ function App() {
 
             <form className="form-panel" onSubmit={handleJoinGame}>
               <label className="form-label" htmlFor="join-code">
-                Join code
+                Six-letter join code
               </label>
               <input
                 id="join-code"
@@ -1674,6 +1810,9 @@ function App() {
                   </option>
                 ))}
               </select>
+              <p className="mini-label">
+                Ask the host for the code shown on the selected game card. If every actor seat is filled, the join will be rejected.
+              </p>
               <button type="submit" disabled={actionLoading}>
                 {actionLoading ? 'Working...' : 'Join game'}
               </button>
@@ -1703,26 +1842,63 @@ function App() {
 
           <aside className="info-panel">
             <div className="section-heading">
-              <p className="eyebrow">Status</p>
-              <h2>Account and game state</h2>
+              <p className="eyebrow">Selected game</p>
+              <h2>What to share and where to go next</h2>
             </div>
             <div className="event-panel compact">
-              <p className="event-label">Current status</p>
+              <p className="event-label">Lobby status</p>
               <h2>{activeGame?.status ?? 'No game selected'}</h2>
               <p>{errorMessage || statusMessage}</p>
               <p className="mini-label">
-                {activeGame?.join_code ? `Join code: ${activeGame.join_code}` : 'Create or join a game to continue.'}
+                {liveJoinCode ? `Join code: ${liveJoinCode}` : 'Create or join a game to continue.'}
               </p>
             </div>
+            <div className="event-panel compact">
+              <p className="event-label">How players join</p>
+              <h2>{liveJoinCode || 'Select a game first'}</h2>
+              <p>
+                Select a game from the center column, copy its join code, then tell players to paste that code into the Join game form on the left.
+              </p>
+              <p className="mini-label">The actual board for the selected game appears below under Shared board.</p>
+            </div>
+            {activeMembership ? (
+              <div className="hero-actions">
+                <button type="button" className="ghost" onClick={handleLeaveGame} disabled={actionLoading}>
+                  Leave game
+                </button>
+              </div>
+            ) : null}
           </aside>
         </section>
 
         {activeGame && gameState ? (
           <>
+            {!walkthroughDismissed ? (
+              <section className="board-panel walkthrough-panel">
+                <div className="section-heading">
+                  <p className="eyebrow">Quick walkthrough</p>
+                  <h2>This is the actual game screen</h2>
+                </div>
+                <div className="walkthrough-list">
+                  {walkthroughSteps.map((step) => (
+                    <div key={step} className="walkthrough-step">
+                      <strong>Step</strong>
+                      <span>{step}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="hero-actions">
+                  <button type="button" className="ghost" onClick={dismissWalkthrough}>
+                    Hide walkthrough
+                  </button>
+                </div>
+              </section>
+            ) : null}
+
             <section className="board-panel">
               <div className="section-heading">
                 <p className="eyebrow">Shared board</p>
-                <h2>Rules-tab board state and world map</h2>
+                <h2>Actual game board, event state, and world map</h2>
               </div>
 
               <div className="board-toolbar">
@@ -1732,7 +1908,7 @@ function App() {
                   <span>
                     {currentPhase === 'choose_actions' ? 'Event hidden until reveal' : currentEvent?.title ?? 'No event loaded'}
                   </span>
-                  <span>Join code {activeGame.join_code}</span>
+                  <span>Join code {liveJoinCode}</span>
                 </div>
                 <div className="hero-actions">
                   <button
@@ -1752,7 +1928,7 @@ function App() {
                   </button>
                   {canManageGame ? (
                     <button type="button" className="ghost" onClick={handleCompleteGame} disabled={actionLoading}>
-                      {activeGame.status === 'completed' ? 'Reopen game' : 'Complete game'}
+                      {liveGameStatus === 'completed' ? 'Reopen game' : 'Complete game'}
                     </button>
                   ) : null}
                   {isAdmin ? (
@@ -1770,12 +1946,17 @@ function App() {
               </div>
 
               <div className="event-panel compact">
-                <p className="event-label">Action order this round</p>
+                <p className="event-label">Global event and action order</p>
                 <h2>{currentOrder.map((powerKey) => boardPlayers.find((player) => player.power_key === powerKey)?.short_name ?? powerKey).join(' → ')}</h2>
                 <p>
                   {currentPhase === 'choose_actions'
                     ? 'The event is chosen already, but only its action order is public during the Preliminary Phase.'
                     : currentEvent?.details ?? 'No event is active right now.'}
+                </p>
+                <p className="mini-label">
+                  {currentPhase === 'choose_actions'
+                    ? 'A popup appears when the global event is revealed.'
+                    : `Global event: ${currentEvent?.title ?? 'None'}`}
                 </p>
               </div>
 
@@ -1808,7 +1989,7 @@ function App() {
                   ))}
                 </div>
 
-                {!isAdmin && activeGame.status === 'active' ? (
+                {!isAdmin && liveGameStatus === 'active' ? (
                   <div className="seat-actions">
                     <p className="mini-label">Claim or change your seat</p>
                     <div className="seat-list">
@@ -1827,6 +2008,29 @@ function App() {
                   </div>
                 ) : null}
 
+                <div className="concealed-panel">
+                  <p className="mini-label">Lobby roster</p>
+                  {boardPlayers.map((player) => {
+                    const member = joinedPlayerByPower.get(player.power_key);
+                    return (
+                      <div className="concealed-row" key={player.id}>
+                        <strong>{player.short_name}</strong>
+                        <span>{member ? `${member.display_name} claimed this seat` : 'Open seat'}</span>
+                      </div>
+                    );
+                  })}
+                  {observerMembers.map((member) => (
+                    <div className="concealed-row" key={`${member.user_id}-observer`}>
+                      <strong>OBS</strong>
+                      <span>{member.display_name} is observing</span>
+                    </div>
+                  ))}
+                  <div className="concealed-row">
+                    <strong>Open</strong>
+                    <span>{openSeatCount} seat(s) still available</span>
+                  </div>
+                </div>
+
                 <div className="event-panel compact">
                   <p className="event-label">Global event</p>
                   <h2>{currentPhase === 'choose_actions' ? 'Hidden Until Reveal' : currentEvent?.title ?? 'No event loaded'}</h2>
@@ -1835,7 +2039,7 @@ function App() {
                       ? 'The Rules tab keeps the event face-down until the Global Event Phase.'
                       : currentEvent?.details ?? 'No event card is available for this board yet.'}
                   </p>
-                  <p className="mini-label">{activeGame.status}</p>
+                  <p className="mini-label">{liveGameStatus}</p>
                 </div>
               </div>
 
@@ -2019,7 +2223,11 @@ function App() {
                   </div>
                 </div>
                 <div className="concealed-panel">
-                  <p className="mini-label">Chosen actions</p>
+                  <p className="mini-label">Action lock tracker</p>
+                  <div className="concealed-row">
+                    <strong>Ready</strong>
+                    <span>{lockedSeatCount} / {turnOrder.length} seats locked</span>
+                  </div>
                   {turnOrder.map((powerKey) => {
                     const player = boardPlayers.find((entry) => entry.power_key === powerKey);
                     const revealedAction = revealedActions[powerKey];
@@ -2034,7 +2242,7 @@ function App() {
                     if (revealedAction) {
                       label = `${revealedAction.cardName} — ${revealedAction.outcome}`;
                     } else if (currentPhase === 'choose_actions' || currentPhase === 'resolve_event') {
-                      label = isLocked ? 'Locked face-down' : 'Waiting';
+                      label = isLocked ? 'Locked in' : 'Still choosing';
                     } else if (isLocked) {
                       label = 'Face-down';
                     }

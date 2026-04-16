@@ -417,6 +417,36 @@ button {
   font-weight: 700;
 }
 
+.walkthrough-panel {
+  margin-top: 1rem;
+}
+
+.walkthrough-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.walkthrough-step {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.9rem;
+  padding: 0.95rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.walkthrough-step strong {
+  color: var(--gold);
+  font-family: 'IBM Plex Mono', monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.walkthrough-step span {
+  color: var(--muted);
+}
+
 .board-toolbar {
   display: flex;
   justify-content: space-between;
@@ -475,6 +505,10 @@ button {
   background:
     radial-gradient(circle at top right, rgba(242, 194, 102, 0.18), transparent 32%),
     rgba(255, 255, 255, 0.035);
+}
+
+.info-panel .event-panel h2 {
+  word-break: break-word;
 }
 
 .selector-panel,
