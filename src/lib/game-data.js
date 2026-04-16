@@ -2056,7 +2056,11 @@ function resolveValueLockIn(players, managerState) {
 }
 
 function resolveActionByCard(players, managerState, gameState, actingPowerKey, privateState) {
-  const card = getActionCard(privateState.selectedCard?.cardKey ?? privateState.selectedCardKey);
+  const card = getActionCard(
+    privateState.selectedCard?.definitionKey ??
+      privateState.selectedCard?.cardKey ??
+      getBaseCardKey(privateState.selectedCardKey),
+  );
 
   if (!card) {
     return {
