@@ -860,7 +860,7 @@ button {
 
 .status-bar-meta {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  grid-template-columns: repeat(3, minmax(9rem, 1fr)) minmax(34rem, 1.8fr);
   gap: 0.8rem;
   align-items: stretch;
 }
@@ -870,6 +870,18 @@ button {
   border: 1px solid var(--line);
   border-radius: 1.2rem;
   background: rgba(255, 255, 255, 0.035);
+}
+
+.status-bar .hero-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(10rem, 1fr));
+  align-items: stretch;
+}
+
+.status-bar .hero-actions button {
+  height: 100%;
+  min-height: 5.25rem;
+  border-radius: 1.8rem;
 }
 
 .status-readout span {
