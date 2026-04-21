@@ -27,12 +27,13 @@ import {
   leaveGame,
   persistGameState,
   setVictoryDeclaration,
+  updateGameFlow,
   updateGameStatus,
   updateTurnSelection,
 } from './lib/game-api.js';
 import worldMap from './assets/world-map-base.webp';
 
-function TrackRow({ label, trackKey, players }) {
+function TrackRow({ label, trackKey, players, roundStartSnapshot }) {
   return (
     <div className="track-row">
       <div className="track-title">
@@ -43,10 +44,25 @@ function TrackRow({ label, trackKey, players }) {
         {Array.from({ length: 11 }, (_, index) => {
           const value = index;
           const occupants = players.filter((player) => player.meters[trackKey] === value);
+          const startingOccupants = players.filter(
+            (player) => roundStartSnapshot?.[player.power_key]?.[trackKey] === value,
+          );
 
           return (
             <div className="track-cell" key={value}>
               <span className="cell-number">{value}</span>
+              <div className="cell-pieces cell-pieces-start">
+                {startingOccupants.map((player) => (
+                  <span
+                    key={`${player.id}-start`}
+                    className="piece-token ghost"
+                    style={{ '--token': player.accent }}
+                    title={`${player.name} started here`}
+                  >
+                    {player.short_name}
+                  </span>
+                ))}
+              </div>
               <div className="cell-pieces">
                 {occupants.map((player) => (
                   <span
@@ -56,6 +72,13 @@ function TrackRow({ label, trackKey, players }) {
                     title={player.name}
                   >
                     {player.short_name}
+                    {(player.meters[trackKey] ?? 0) !== (roundStartSnapshot?.[player.power_key]?.[trackKey] ?? 0) ? (
+                      <small className="piece-delta">
+                        {(player.meters[trackKey] ?? 0) > (roundStartSnapshot?.[player.power_key]?.[trackKey] ?? 0)
+                          ? `+${(player.meters[trackKey] ?? 0) - (roundStartSnapshot?.[player.power_key]?.[trackKey] ?? 0)}`
+                          : `${(player.meters[trackKey] ?? 0) - (roundStartSnapshot?.[player.power_key]?.[trackKey] ?? 0)}`}
+                      </small>
+                    ) : null}
                   </span>
                 ))}
               </div>
@@ -74,9 +97,7 @@ function LoginPage({ loading, onLogin, errorMessage }) {
         <p className="eyebrow">Competing Futures / access gate</p>
         <h1>Sign in to create games, join games, and see the history of the games you played.</h1>
         <p className="auth-copy">
-          Google Auth is the only sign-in path. For now, <strong>sethlifland11@gmail.com</strong> is
-          treated as <strong>admin</strong> and every other account is created as a
-          <strong> player</strong>.
+          Google Auth is the only sign-in path. Private game data stays tied to your signed-in account.
         </p>
         <button type="button" className="auth-button" onClick={onLogin} disabled={loading}>
           {loading ? 'Redirecting to Google...' : 'Continue with Google'}
@@ -338,7 +359,7 @@ function evaluateFormulaForDisplay(player, formula) {
     0,
   );
 
-  return Math.floor(formula.base - formula.difficulty * weightedValue);
+  return Math.floor((formula.base - 1) - formula.difficulty * weightedValue);
 }
 
 function getRollSuccessChance(threshold) {
@@ -384,6 +405,19 @@ function parseObjectiveText(objectiveText) {
       .map((line) => line.replace(/^- /, '').trim())
       .filter(Boolean),
   };
+}
+
+function buildImpactBullets(summary) {
+  if (!summary) {
+    return [];
+  }
+
+  return summary
+    .replace(/\. (Fail:)/g, '.\n$1')
+    .replace(/\. (Success:)/g, '.\n$1')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
 }
 
 function evaluateObjectiveCondition(condition, players, activePowerKey) {
@@ -658,7 +692,7 @@ function getObjectiveRollSummary(parsedObjective, activePlayer, players, objecti
 
   if (parsedObjective.outcome === 'Roll Safety Against Capabilities') {
     const model = players.find((player) => player.power_key === 'model');
-    const target = Math.max(0, Math.min(10, 6 - (model?.meters.capabilities ?? 0) + (activePlayer.meters.safety ?? 0)));
+    const target = Math.max(0, Math.min(10, 7 - (model?.meters.capabilities ?? 0) + (activePlayer.meters.safety ?? 0)));
     return { label: `Roll <= ${target}`, chance: target / 10 };
   }
 
@@ -891,9 +925,10 @@ function App() {
   const [joinSeatKey, setJoinSeatKey] = React.useState('');
   const [statusMessage, setStatusMessage] = React.useState('Checking Supabase session...');
   const [errorMessage, setErrorMessage] = React.useState('');
-  const [announcement, setAnnouncement] = React.useState(null);
+  const [toast, setToast] = React.useState(null);
   const [hudPanel, setHudPanel] = React.useState(null);
   const seenAnnouncementsRef = React.useRef(new Set());
+  const autoAdvanceKeyRef = React.useRef('');
   const [walkthroughDismissed, setWalkthroughDismissed] = React.useState(() => {
     if (typeof window === 'undefined') {
       return false;
@@ -1244,6 +1279,22 @@ function App() {
     return next;
   }, [actionLocks, activePowerKey, gameState?.managerState, privateState.selectedCardKey]);
   const lockedSeatCount = turnOrder.filter((powerKey) => Boolean(selectedCardKeysByPower[powerKey])).length;
+  const roundStartSnapshot = gameState?.engineState?.roundStartSnapshot ?? {};
+  const eventReadySelections = gameState?.engineState?.eventReadySelections ?? {};
+  const readySeatCount = turnOrder.filter(
+    (powerKey) => selectedCardKeysByPower[powerKey] && eventReadySelections[powerKey] === selectedCardKeysByPower[powerKey],
+  ).length;
+  const allSeatsReadyForEvent =
+    turnOrder.every((powerKey) => selectedCardKeysByPower[powerKey]) &&
+    readySeatCount === turnOrder.length;
+  const canSignalEventReady = Boolean(
+    activeMembership?.power_key &&
+      activeMembership.power_key === activePowerKey &&
+      currentPhase === 'choose_actions' &&
+      privateState.selectedCardKey,
+  );
+  const isCurrentSeatReady =
+    canSignalEventReady && eventReadySelections[activePowerKey] === privateState.selectedCardKey;
   const walkthroughSteps = [
     'Pick a game from the Active games list above. The actual board appears below under Shared board.',
     'Share the six-letter join code with other players. They can paste it into Join game to enter the lobby.',
@@ -1251,10 +1302,34 @@ function App() {
     'During Choose Actions, watch the lock tracker to see who is ready before advancing the round.',
   ];
   const announcementKey = activeGame ? `${activeGame.id}:${gameState?.round ?? 0}:${currentPhase}` : '';
+  const recommendedPanel =
+    currentPhase === 'choose_actions' && !privateState.selectedCardKey
+      ? 'cards'
+      : currentPhase === 'choose_actions' && !isCurrentSeatReady
+        ? 'log'
+        : currentPhase === 'victory_check'
+          ? 'objective'
+          : currentPhase === 'resolve_actions'
+            ? 'log'
+            : 'event';
+  const nextStepMessage =
+    currentPhase === 'choose_actions' && !privateState.selectedCardKey
+      ? 'Next: open Cards and lock one action face-down.'
+      : currentPhase === 'choose_actions' && !isCurrentSeatReady
+        ? `Next: mark yourself ready for event reveal. ${readySeatCount}/${turnOrder.length} players ready.`
+        : currentPhase === 'choose_actions'
+          ? `Waiting for the rest of the table. ${readySeatCount}/${turnOrder.length} players ready.`
+          : currentPhase === 'resolve_event'
+            ? 'Global event is revealing and resolves immediately.'
+            : currentPhase === 'resolve_actions'
+              ? 'Watch the action cards flip in order and the board update.'
+              : winner
+                ? `${winner.name} has won.`
+                : 'Review objectives while the game checks for wins and prepares the next round.';
 
   React.useEffect(() => {
     if (!activeGame || !gameState) {
-      setAnnouncement(null);
+      setToast(null);
       return;
     }
 
@@ -1265,37 +1340,96 @@ function App() {
     }
 
     if (currentPhase === 'resolve_event' && currentEvent) {
-      setAnnouncement({
+      setToast({
         title: `Global event: ${currentEvent.title}`,
-        body: [currentEvent.details, ...currentEventEffects].filter(Boolean).join('\n'),
+        body: [currentEvent.details, ...currentEventEffects].filter(Boolean).join(' • '),
         meta: `Round ${gameState.round} / Global Event Phase`,
+        durationMs: 2200,
       });
       seenAnnouncements.add(announcementKey);
       return;
     }
 
     if (currentPhase === 'resolve_actions') {
-      setAnnouncement({
+      setToast({
         title: `Round ${gameState.round} action resolution`,
         body: `Players now reveal actions in this order: ${currentOrder
           .map((powerKey) => boardPlayers.find((player) => player.power_key === powerKey)?.short_name ?? powerKey)
-          .join(' -> ')}.`,
+          .join(' > ')}.`,
         meta: 'Actions are public now. Watch the log and lock tracker as each seat resolves.',
+        durationMs: 2200,
       });
       seenAnnouncements.add(announcementKey);
       return;
     }
 
     if (currentPhase === 'victory_check') {
-      setAnnouncement({
+      setToast({
         title: `Round ${gameState.round} victory check`,
         body: 'Action resolution is complete. Check the board, hidden objectives, and any victory declarations before continuing.',
         meta: winner ? `${winner.name} has already been determined as the winner.` : 'No winner is locked yet.',
+        durationMs: winner ? 2600 : 1800,
       });
       seenAnnouncements.add(announcementKey);
       return;
     }
-  }, [activeGame, announcementKey, boardPlayers, currentEvent, currentOrder, currentPhase, gameState, winner]);
+  }, [activeGame, announcementKey, boardPlayers, currentEvent, currentEventEffects, currentOrder, currentPhase, gameState, winner]);
+
+  React.useEffect(() => {
+    if (!toast?.durationMs) {
+      return undefined;
+    }
+
+    const timerId = window.setTimeout(() => setToast(null), toast.durationMs);
+    return () => window.clearTimeout(timerId);
+  }, [toast]);
+
+  React.useEffect(() => {
+    if (!canManageGame || !activeGame || !gameState?.players?.length || !gameState?.managerState || actionLoading) {
+      autoAdvanceKeyRef.current = '';
+      return undefined;
+    }
+
+    const shouldAdvance =
+      (currentPhase === 'choose_actions' && allSeatsReadyForEvent) ||
+      currentPhase === 'resolve_event' ||
+      (currentPhase === 'resolve_actions' && !winner) ||
+      (currentPhase === 'victory_check' && !winner);
+
+    if (!shouldAdvance) {
+      autoAdvanceKeyRef.current = '';
+      return undefined;
+    }
+
+    const advanceKey = `${activeGame.id}:${gameState.round}:${currentPhase}:${gameState.currentTurnIndex ?? 0}`;
+    if (autoAdvanceKeyRef.current === advanceKey) {
+      return undefined;
+    }
+
+    autoAdvanceKeyRef.current = advanceKey;
+    const delayMs =
+      currentPhase === 'choose_actions'
+        ? 500
+        : currentPhase === 'resolve_event'
+          ? 1400
+          : currentPhase === 'resolve_actions'
+            ? 1700
+            : 1900;
+
+    const timerId = window.setTimeout(() => {
+      handleAdvanceFlow(true);
+    }, delayMs);
+
+    return () => window.clearTimeout(timerId);
+  }, [
+    actionLoading,
+    activeGame,
+    allSeatsReadyForEvent,
+    canManageGame,
+    currentPhase,
+    gameState,
+    winner,
+  ]);
 
   async function signInWithGoogle() {
     if (!supabase) {
@@ -1348,7 +1482,8 @@ function App() {
     try {
       setActionLoading(true);
       setErrorMessage('');
-      const gameId = await createGame(createGameName.trim(), createSeatKey);
+      const fallbackName = `${(profile?.full_name || session?.user?.email || 'Player').split(' ')[0]}'s game`;
+      const gameId = await createGame((createGameName.trim() || fallbackName).trim(), createSeatKey);
       await initializeGameFromRules(gameId);
       setCreateGameName('');
       setCreateSeatKey('');
@@ -1375,6 +1510,25 @@ function App() {
       setSelectedGameId(gameId);
       setRefreshKey((current) => current + 1);
       setStatusMessage('Joined game.');
+    } catch (error) {
+      setErrorMessage(error.message);
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function handleJoinSelectedGame() {
+    if (!activeGame || !liveJoinCode) {
+      return;
+    }
+
+    try {
+      setActionLoading(true);
+      setErrorMessage('');
+      const gameId = await joinGameByCode(liveJoinCode, '');
+      setSelectedGameId(gameId);
+      setRefreshKey((current) => current + 1);
+      setStatusMessage('Joined selected game.');
     } catch (error) {
       setErrorMessage(error.message);
     } finally {
@@ -1516,6 +1670,13 @@ function App() {
       );
 
       setStatusMessage(`Locked ${card.name} for ${activePlayer.name}.`);
+      setToast({
+        title: 'Action locked',
+        body: 'Your card is face-down and ready for the reveal.',
+        meta: 'Other players can only see that you are locked in.',
+        durationMs: 1800,
+        tone: 'card-lock',
+      });
       setHudPanel(null);
     } catch (error) {
       setErrorMessage(error.message);
@@ -1579,12 +1740,13 @@ function App() {
           .map((powerKey) => boardPlayers.find((player) => player.power_key === powerKey))
           .filter(Boolean);
         setWaitingOnPlayers(missingPlayers);
-        setAnnouncement({
+        setToast({
           title: 'Still waiting on action locks',
           body: `The round cannot advance yet. Missing locks: ${missingPlayers
             .map((player) => player.short_name)
             .join(', ')}.`,
           meta: 'Each active seat must lock one card before the event can be revealed.',
+          durationMs: 1800,
         });
         setStatusMessage(
           `Waiting on action choices from ${missingPlayers.map((player) => player.name).join(', ')}.`,
@@ -1636,7 +1798,65 @@ function App() {
       }
 
       setStatusMessage(nextState.statusMessage);
+      if (currentPhase === 'resolve_actions') {
+        const actingPowerKey = gameState.engineState?.actionOrder?.[gameState.currentTurnIndex ?? 0] ?? currentTurnPowerKey;
+        const actingPlayerLabel =
+          boardPlayers.find((player) => player.power_key === actingPowerKey)?.name ?? 'A player';
+        const revealedAction = nextState.engineState?.revealedActions?.[actingPowerKey];
+        setToast({
+          title: `${actingPlayerLabel} resolved`,
+          body: `${revealedAction?.cardName ?? 'Action'}: ${revealedAction?.outcome ?? nextState.statusMessage}`,
+          durationMs: 2200,
+        });
+      } else if (currentPhase === 'victory_check' && !nextState.winnerPowerKey) {
+        setToast({
+          title: 'No victory this round',
+          body: `Round ${nextState.round} begins in a moment.`,
+          durationMs: 1800,
+        });
+      }
       setRefreshKey((current) => current + 1);
+    } catch (error) {
+      setErrorMessage(error.message);
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function handleSignalEventReady() {
+    if (!activeGame || !gameState || !activePowerKey || !privateState.selectedCardKey) {
+      return;
+    }
+
+    try {
+      setActionLoading(true);
+      setErrorMessage('');
+      const nextEngineState = {
+        ...(gameState.engineState ?? {}),
+        eventReadySelections: {
+          ...((gameState.engineState ?? {}).eventReadySelections ?? {}),
+          [activePowerKey]: privateState.selectedCardKey,
+        },
+      };
+
+      await updateGameFlow(activeGame.id, {
+        round: gameState.round,
+        phase: gameState.phase,
+        current_turn_index: gameState.currentTurnIndex ?? 0,
+        status: gameState.status,
+        winner_power_key: gameState.winnerPowerKey,
+        engine_state: nextEngineState,
+      });
+
+      setGameState((current) =>
+        current
+          ? {
+              ...current,
+              engineState: nextEngineState,
+            }
+          : current,
+      );
+      setStatusMessage(`Ready for event reveal. ${readySeatCount + (isCurrentSeatReady ? 0 : 1)}/${turnOrder.length} players ready.`);
     } catch (error) {
       setErrorMessage(error.message);
     } finally {
@@ -1647,11 +1867,11 @@ function App() {
   const activeGameReady = Boolean(activeGame && gameState);
   const advanceFlowLabel =
     currentPhase === 'choose_actions'
-      ? 'Reveal global event'
+      ? 'Advance round'
       : currentPhase === 'resolve_event'
-        ? 'Apply event effects'
+        ? 'Resolve event'
         : currentPhase === 'resolve_actions'
-          ? `Resolve ${currentTurnPlayer?.short_name ?? 'next'} action`
+          ? `Flip ${currentTurnPlayer?.short_name ?? 'next'} card`
           : winner
             ? 'Victory locked'
             : 'Resolve victory and next round';
@@ -1665,7 +1885,7 @@ function App() {
     currentPhase === 'choose_actions'
       ? missingLockPlayers.length
         ? `Waiting on ${missingLockPlayers.map((player) => player.short_name).join(', ')}`
-        : 'All seats locked. Ready to reveal the event.'
+        : `All seats locked. ${readySeatCount}/${turnOrder.length} players ready.`
       : currentPhase === 'resolve_event'
         ? `${currentEvent?.title ?? 'Global event'} is on deck`
         : currentPhase === 'resolve_actions'
@@ -1675,7 +1895,9 @@ function App() {
             : 'Review objectives and victory declarations';
   const tableSubline =
     currentPhase === 'choose_actions'
-      ? `${lockedSeatCount}/${turnOrder.length} seats locked this round.`
+      ? missingLockPlayers.length
+        ? `${lockedSeatCount}/${turnOrder.length} seats locked this round.`
+        : `${readySeatCount}/${turnOrder.length} players ready to reveal the event.`
       : currentPhase === 'resolve_event'
         ? currentEvent?.details ?? 'The revealed global event resolves before any actions.'
         : currentPhase === 'resolve_actions'
@@ -1716,24 +1938,14 @@ function App() {
 
   return (
     <>
-      {announcement ? (
-        <div className="modal-overlay" role="presentation" onClick={() => setAnnouncement(null)}>
-          <section
-            className="modal-panel"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="announcement-title"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <p className="eyebrow">Game update</p>
-            <h2 id="announcement-title">{announcement.title}</h2>
-            <p className="modal-copy">{announcement.body}</p>
-            <p className="mini-label">{announcement.meta}</p>
-            <button type="button" className="auth-button" onClick={() => setAnnouncement(null)}>
-              Continue
-            </button>
-          </section>
-        </div>
+      {toast ? (
+        <section className={toast.tone ? `game-toast ${toast.tone}` : 'game-toast'} aria-live="polite">
+          <p className="eyebrow">Game update</p>
+          <h2>{toast.title}</h2>
+          <p>{toast.body}</p>
+          {toast.meta ? <p className="mini-label">{toast.meta}</p> : null}
+          {toast.tone === 'card-lock' ? <div className="face-down-card" aria-hidden="true" /> : null}
+        </section>
       ) : null}
 
       {waitingOnPlayers.length ? (
@@ -1804,11 +2016,18 @@ function App() {
                   <button
                     type="button"
                     key={button.key}
-                    className={hudPanel === button.key ? 'hud-dock-button active' : 'hud-dock-button'}
+                    className={
+                      hudPanel === button.key
+                        ? 'hud-dock-button active'
+                        : recommendedPanel === button.key
+                          ? 'hud-dock-button recommended'
+                          : 'hud-dock-button'
+                    }
                     onClick={() => setHudPanel((current) => (current === button.key ? null : button.key))}
                   >
                     <strong>{button.badge}</strong>
                     <span>{button.label}</span>
+                    {recommendedPanel === button.key ? <small>Next</small> : null}
                   </button>
                 ))}
               </div>
@@ -1850,7 +2069,7 @@ function App() {
                       {activePlayer ? (
                         <p className="overlay-copy">
                           {canEditSeatAction
-                            ? 'Choose one action card, lock it, and the overlay will clear back to the map.'
+                            ? 'Choose one action card, pick your guaranteed +1 track, then lock it face-down.'
                             : privateState.selectedAction
                               ? `Locked action: ${privateState.selectedAction}.`
                               : 'You can inspect this seat, but only the controlling player may lock an action right now.'}
@@ -1898,6 +2117,22 @@ function App() {
                                   </div>
                                 ) : null}
                               </div>
+                              <div className="impact-notes impact-bullets">
+                                <ul>
+                                  {buildImpactBullets(card.text).map((line) => (
+                                    <li key={line}>
+                                      {line.startsWith('Success:') || line.startsWith('Fail:') ? (
+                                        <>
+                                          <strong>{line.split(':')[0]}:</strong>
+                                          {` ${line.slice(line.indexOf(':') + 1).trim()}`}
+                                        </>
+                                      ) : (
+                                        <strong>{line}</strong>
+                                      )}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
                               <div className="card-impact-grid">
                                 <OutcomeTable title="Success" rows={outcomeRows.success} tone="success" />
                                 <OutcomeTable title="Failure" rows={outcomeRows.failure} emptyLabel="No penalty" tone="failure" />
@@ -1910,17 +2145,41 @@ function App() {
                                 </div>
                               ) : null}
                               {canEditSeatAction ? (
-                                <ActionSelectionFields
-                                  card={card}
-                                  players={boardPlayers}
-                                  value={cardDrafts[card.cardKey] ?? buildDefaultSelectionPayload(cardDefinition, activePowerKey)}
-                                  onChange={(nextValue) =>
-                                    setCardDrafts((current) => ({
-                                      ...current,
-                                      [card.cardKey]: nextValue,
-                                    }))
-                                  }
-                                />
+                                <>
+                                  <label className="form-label">
+                                    Guaranteed +1 track
+                                    <select
+                                      className="input-control"
+                                      value={(cardDrafts[card.cardKey] ?? buildDefaultSelectionPayload(cardDefinition, activePowerKey)).bonusTrack ?? 'resources'}
+                                      onChange={(event) =>
+                                        setCardDrafts((current) => ({
+                                          ...current,
+                                          [card.cardKey]: {
+                                            ...(current[card.cardKey] ?? buildDefaultSelectionPayload(cardDefinition, activePowerKey)),
+                                            bonusTrack: event.target.value,
+                                          },
+                                        }))
+                                      }
+                                    >
+                                      {tracks.map((track) => (
+                                        <option key={track.key} value={track.key}>
+                                          +1 {track.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </label>
+                                  <ActionSelectionFields
+                                    card={card}
+                                    players={boardPlayers}
+                                    value={cardDrafts[card.cardKey] ?? buildDefaultSelectionPayload(cardDefinition, activePowerKey)}
+                                    onChange={(nextValue) =>
+                                      setCardDrafts((current) => ({
+                                        ...current,
+                                        [card.cardKey]: nextValue,
+                                      }))
+                                    }
+                                  />
+                                </>
                               ) : null}
                               {canEditSeatAction ? (
                                 <button type="button" className="hand-action-button" onClick={() => handleSelectAction(card)}>
@@ -1947,7 +2206,9 @@ function App() {
                         {currentPhase !== 'choose_actions' && currentEventEffects.length ? (
                           <ul className="event-effects">
                             {currentEventEffects.map((effect) => (
-                              <li key={effect}>{effect}</li>
+                              <li key={effect}>
+                                <strong>{effect}</strong>
+                              </li>
                             ))}
                           </ul>
                         ) : null}
@@ -1961,7 +2222,13 @@ function App() {
                   {hudPanel === 'tracks' ? (
                     <div className="overlay-scroll overlay-stack">
                       {tracks.map((track) => (
-                        <TrackRow key={track.key} label={track.label} trackKey={track.key} players={boardPlayers} />
+                        <TrackRow
+                          key={track.key}
+                          label={track.label}
+                          trackKey={track.key}
+                          players={boardPlayers}
+                          roundStartSnapshot={roundStartSnapshot}
+                        />
                       ))}
                     </div>
                   ) : null}
@@ -2101,7 +2368,11 @@ function App() {
                         <p className="mini-label">Action lock tracker</p>
                         <div className="concealed-row">
                           <strong>Ready</strong>
-                          <span>{lockedSeatCount} / {turnOrder.length} seats locked</span>
+                          <span>
+                            {currentPhase === 'choose_actions' && !missingLockPlayers.length
+                              ? `${readySeatCount} / ${turnOrder.length} players ready`
+                              : `${lockedSeatCount} / ${turnOrder.length} seats locked`}
+                          </span>
                         </div>
                         {turnOrder.map((powerKey) => {
                           const player = boardPlayers.find((entry) => entry.power_key === powerKey);
@@ -2158,6 +2429,7 @@ function App() {
                 <p className="eyebrow">Table status</p>
                 <h2>{tableHeadline}</h2>
                 <p>{errorMessage || tableSubline || statusMessage}</p>
+                <p className="guide-copy">{nextStepMessage}</p>
               </div>
               <div className="status-bar-meta">
                 <div className="status-readout">
@@ -2173,9 +2445,19 @@ function App() {
                   <strong>{currentPhase === 'choose_actions' ? 'Hidden until reveal' : currentEvent?.title ?? 'None'}</strong>
                 </div>
                 <div className="hero-actions">
-                  <button type="button" onClick={handleAdvanceFlow} disabled={!canAdvanceFlow}>
-                    {advanceFlowLabel}
-                  </button>
+                  {!activeMembership && liveJoinCode ? (
+                    <button type="button" onClick={handleJoinSelectedGame} disabled={actionLoading}>
+                      Join this game
+                    </button>
+                  ) : canSignalEventReady ? (
+                    <button type="button" onClick={handleSignalEventReady} disabled={actionLoading || isCurrentSeatReady}>
+                      {isCurrentSeatReady ? `${readySeatCount}/${turnOrder.length} ready` : 'Ready for event'}
+                    </button>
+                  ) : (
+                    <button type="button" onClick={handleAdvanceFlow} disabled={!canAdvanceFlow}>
+                      {advanceFlowLabel}
+                    </button>
+                  )}
                   {canManageGame ? (
                     <button type="button" className="ghost" onClick={handleCompleteGame} disabled={actionLoading}>
                       {liveGameStatus === 'completed' ? 'Reopen game' : 'Complete game'}
@@ -2238,8 +2520,7 @@ function App() {
                     className="input-control"
                     value={createGameName}
                     onChange={(event) => setCreateGameName(event.target.value)}
-                    placeholder="Spring strategy session"
-                    required
+                    placeholder="Optional custom title"
                   />
                   <label className="form-label" htmlFor="create-seat">
                     Claim a seat now
@@ -2337,10 +2618,17 @@ function App() {
                   <p className="event-label">How players join</p>
                   <h2>{liveJoinCode || 'Select a game first'}</h2>
                   <p>
-                    Select a game from the center column, copy its join code, then tell players to paste that code into the Join game form on the left.
+                    Select a game from the center column, then click join. The code is still visible if someone needs to join from another device.
                   </p>
                   <p className="mini-label">Select an active game to enter the map-first play surface.</p>
                 </div>
+                {activeGame && !activeMembership ? (
+                  <div className="hero-actions">
+                    <button type="button" onClick={handleJoinSelectedGame} disabled={actionLoading || !liveJoinCode}>
+                      Join selected game
+                    </button>
+                  </div>
+                ) : null}
                 {activeMembership ? (
                   <div className="hero-actions">
                     <button type="button" className="ghost" onClick={handleLeaveGame} disabled={actionLoading}>

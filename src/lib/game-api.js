@@ -414,6 +414,15 @@ export async function updateGameStatus(gameId, status) {
   }
 }
 
+export async function updateGameFlow(gameId, gameUpdate) {
+  const client = getSupabaseClient();
+  const { error } = await client.from('games').update(gameUpdate).eq('id', gameId);
+
+  if (error) {
+    throw getGameFlowSetupError(error);
+  }
+}
+
 export async function deleteGame(gameId) {
   const client = getSupabaseClient();
   const { error } = await client.from('games').delete().eq('id', gameId);

@@ -39,7 +39,7 @@ const actorDefinitions = {
     accent: '#7dd3fc',
     role: 'State actor',
     homeClass: 'north-america',
-    meters: { capabilities: 0, resources: 2, safety: 1, publicSupport: 1 },
+    meters: { capabilities: 1, resources: 3, safety: 2, publicSupport: 2 },
   },
   china: {
     id: 'china',
@@ -48,7 +48,7 @@ const actorDefinitions = {
     accent: '#f97316',
     role: 'State actor',
     homeClass: 'east-asia',
-    meters: { capabilities: 0, resources: 1, safety: 1, publicSupport: 2 },
+    meters: { capabilities: 1, resources: 2, safety: 2, publicSupport: 3 },
   },
   'lab-a': {
     id: 'lab-a',
@@ -57,7 +57,7 @@ const actorDefinitions = {
     accent: '#d946ef',
     role: 'Commercial lab',
     homeClass: 'west-coast',
-    meters: { capabilities: 1, resources: 0, safety: 2, publicSupport: 2 },
+    meters: { capabilities: 2, resources: 1, safety: 3, publicSupport: 3 },
   },
   'lab-b': {
     id: 'lab-b',
@@ -66,7 +66,7 @@ const actorDefinitions = {
     accent: '#22c55e',
     role: 'Commercial lab',
     homeClass: 'europe',
-    meters: { capabilities: 1, resources: 1, safety: 1, publicSupport: 0 },
+    meters: { capabilities: 2, resources: 2, safety: 2, publicSupport: 1 },
   },
   model: {
     id: 'model',
@@ -75,7 +75,7 @@ const actorDefinitions = {
     accent: '#fde047',
     role: 'Emergent actor',
     homeClass: 'global',
-    meters: { capabilities: 1, resources: 0, safety: 1, publicSupport: 0 },
+    meters: { capabilities: 2, resources: 1, safety: 2, publicSupport: 1 },
   },
 };
 
@@ -107,6 +107,20 @@ function cloneMeters(meters) {
     safety: meters.safety,
     publicSupport: meters.publicSupport,
   };
+}
+
+function snapshotPlayers(players) {
+  return Object.fromEntries(
+    players.map((player) => [
+      getPlayerKey(player),
+      {
+        capabilities: player.meters.capabilities,
+        resources: player.meters.resources,
+        safety: player.meters.safety,
+        publicSupport: player.meters.publicSupport,
+      },
+    ]),
+  );
 }
 
 function clonePlayer(player) {
@@ -273,7 +287,7 @@ function evaluateFormula(player, formula) {
     (sum, term) => sum + player.meters[term.track] * term.weight,
     0,
   );
-  return Math.floor(formula.base - formula.difficulty * weightedValue);
+  return Math.floor((formula.base - 1) - formula.difficulty * weightedValue);
 }
 
 function compareByTiebreaker(players, powerKeys) {
@@ -1886,6 +1900,8 @@ export function buildGameInitialization(players) {
       revealedEventKey: null,
       drawnEventKeys: [],
       revealedActions: {},
+      eventReadySelections: {},
+      roundStartSnapshot: snapshotPlayers(nextPlayers),
       publicLog: ['Rules-tab ruleset loaded.'],
       singularityRound: null,
       pathDependentResolved: false,
@@ -1914,37 +1930,40 @@ function actorChoicesForCard(card, actingPowerKey) {
 }
 
 export function buildDefaultSelectionPayload(card, actingPowerKey) {
+  const payload = { bonusTrack: 'resources' };
+
   if (!card?.selection) {
-    return {};
+    return payload;
   }
 
   if (card.selection.kind === 'target') {
     const [targetActorKey] = actorChoicesForCard(card, actingPowerKey);
-    return { targetActorKey };
+    return { ...payload, targetActorKey };
   }
 
   if (card.selection.kind === 'targets') {
     const options = actorChoicesForCard(card, actingPowerKey);
-    return { targetActorKeys: options.slice(0, card.selection.count) };
+    return { ...payload, targetActorKeys: options.slice(0, card.selection.count) };
   }
 
   if (card.selection.kind === 'allocation') {
-    return { capabilityPoints: 1 };
+    return { ...payload, capabilityPoints: 1 };
   }
 
   if (card.selection.kind === 'target_and_axis') {
     const [targetActorKey] = actorChoicesForCard(card, actingPowerKey);
-    return { targetActorKey, track: 'capabilities' };
+    return { ...payload, targetActorKey, track: 'capabilities' };
   }
 
-  return {};
+  return payload;
 }
 
 export function sanitizeSelectionPayload(card, payload, actingPowerKey) {
   const fallback = buildDefaultSelectionPayload(card, actingPowerKey);
+  const bonusTrack = TRACK_COLUMNS.includes(payload?.bonusTrack) ? payload.bonusTrack : fallback.bonusTrack;
 
   if (!card?.selection) {
-    return {};
+    return { bonusTrack };
   }
 
   if (card.selection.kind === 'target') {
@@ -1952,7 +1971,7 @@ export function sanitizeSelectionPayload(card, payload, actingPowerKey) {
     const targetActorKey = options.includes(payload?.targetActorKey)
       ? payload.targetActorKey
       : fallback.targetActorKey;
-    return { targetActorKey };
+    return { bonusTrack, targetActorKey };
   }
 
   if (card.selection.kind === 'targets') {
@@ -1961,18 +1980,20 @@ export function sanitizeSelectionPayload(card, payload, actingPowerKey) {
     const uniqueChosen = [...new Set(chosen)];
     const remaining = actorChoicesForCard(card, actingPowerKey).filter((powerKey) => !uniqueChosen.includes(powerKey));
     return {
+      bonusTrack,
       targetActorKeys: [...uniqueChosen, ...remaining].slice(0, card.selection.count),
     };
   }
 
   if (card.selection.kind === 'allocation') {
     const capabilityPoints = Math.max(0, Math.min(card.selection.total, Number(payload?.capabilityPoints ?? 1)));
-    return { capabilityPoints };
+    return { bonusTrack, capabilityPoints };
   }
 
   if (card.selection.kind === 'target_and_axis') {
     const options = actorChoicesForCard(card, actingPowerKey);
     return {
+      bonusTrack,
       targetActorKey: options.includes(payload?.targetActorKey)
         ? payload.targetActorKey
         : fallback.targetActorKey,
@@ -2147,6 +2168,9 @@ function resolveActionByCard(players, managerState, gameState, actingPowerKey, p
 
   const actingPlayer = getPlayerMap(players).get(actingPowerKey);
   const payload = sanitizeSelectionPayload(card, privateState.selectedActionPayload, actingPowerKey);
+  let nextPlayers = applyDeltaBundle(players, [actingPowerKey], {
+    [payload.bonusTrack ?? 'resources']: 1,
+  });
   const threshold = evaluateFormula(actingPlayer, card.formula);
   const roll = rollDie(10);
   const success = roll >= threshold;
@@ -2154,7 +2178,7 @@ function resolveActionByCard(players, managerState, gameState, actingPowerKey, p
   if (!success) {
     const builtOutcome = card.buildOutcome(payload, players);
     const failureEffects = builtOutcome.failure ?? [];
-    const nextPlayers = applyOutcomeEffects(players, actingPowerKey, payload, failureEffects);
+    nextPlayers = applyOutcomeEffects(nextPlayers, actingPowerKey, payload, failureEffects);
     return {
       players: nextPlayers,
       managerState,
@@ -2163,16 +2187,16 @@ function resolveActionByCard(players, managerState, gameState, actingPowerKey, p
         roll,
         threshold,
         outcome: failureEffects.length
-          ? `Failure. ${formatDeltas(failureEffects[0].deltas)}`
-          : 'Failure. No effect.',
+          ? `Failure. Guaranteed +1 ${formatTrackLabel(payload.bonusTrack ?? 'resources')}; ${formatDeltas(failureEffects[0].deltas)}`
+          : `Failure. Guaranteed +1 ${formatTrackLabel(payload.bonusTrack ?? 'resources')}.`,
       },
     };
   }
 
-  const builtOutcome = card.buildOutcome(payload, players);
+  const builtOutcome = card.buildOutcome(payload, nextPlayers);
 
   if (builtOutcome.special === 'espionage') {
-    const result = resolveEspionage(players, managerState, actingPowerKey, payload);
+    const result = resolveEspionage(nextPlayers, managerState, actingPowerKey, payload);
     return {
       players: result.players,
       managerState: result.managerState,
@@ -2180,13 +2204,13 @@ function resolveActionByCard(players, managerState, gameState, actingPowerKey, p
         cardName: card.name,
         roll,
         threshold,
-        outcome: `Success. ${result.outcomeText}.`,
+        outcome: `Success. Guaranteed +1 ${formatTrackLabel(payload.bonusTrack ?? 'resources')}; ${result.outcomeText}.`,
       },
     };
   }
 
   if (builtOutcome.special === 'positive_crisis_response') {
-    const result = resolvePositiveCrisisResponse(players, managerState, gameState);
+    const result = resolvePositiveCrisisResponse(nextPlayers, managerState, gameState);
     return {
       players: result.players,
       managerState: result.managerState,
@@ -2194,13 +2218,13 @@ function resolveActionByCard(players, managerState, gameState, actingPowerKey, p
         cardName: card.name,
         roll,
         threshold,
-        outcome: result.outcomeText,
+        outcome: `Guaranteed +1 ${formatTrackLabel(payload.bonusTrack ?? 'resources')}; ${result.outcomeText}`,
       },
     };
   }
 
   if (builtOutcome.special === 'emergent_behavior') {
-    const result = resolveEmergentBehavior(players, managerState);
+    const result = resolveEmergentBehavior(nextPlayers, managerState);
     return {
       players: maybePropagateModelCapabilityGain(result.players, actingPowerKey, [
         { target: 'self', deltas: { capabilities: 2 } },
@@ -2210,13 +2234,13 @@ function resolveActionByCard(players, managerState, gameState, actingPowerKey, p
         cardName: card.name,
         roll,
         threshold,
-        outcome: result.outcomeText,
+        outcome: `Guaranteed +1 ${formatTrackLabel(payload.bonusTrack ?? 'resources')}; ${result.outcomeText}`,
       },
     };
   }
 
   if (builtOutcome.special === 'deceptive_alignment') {
-    const result = resolveDeceptiveAlignment(players, managerState);
+    const result = resolveDeceptiveAlignment(nextPlayers, managerState);
     return {
       players: maybePropagateModelCapabilityGain(result.players, actingPowerKey, [
         { target: 'self', deltas: { capabilities: 2 } },
@@ -2226,13 +2250,13 @@ function resolveActionByCard(players, managerState, gameState, actingPowerKey, p
         cardName: card.name,
         roll,
         threshold,
-        outcome: result.outcomeText,
+        outcome: `Guaranteed +1 ${formatTrackLabel(payload.bonusTrack ?? 'resources')}; ${result.outcomeText}`,
       },
     };
   }
 
   if (builtOutcome.special === 'value_lock_in') {
-    const result = resolveValueLockIn(players, managerState);
+    const result = resolveValueLockIn(nextPlayers, managerState);
     return {
       players: result.players,
       managerState: result.managerState,
@@ -2240,12 +2264,12 @@ function resolveActionByCard(players, managerState, gameState, actingPowerKey, p
         cardName: card.name,
         roll,
         threshold,
-        outcome: result.outcomeText,
+        outcome: `Guaranteed +1 ${formatTrackLabel(payload.bonusTrack ?? 'resources')}; ${result.outcomeText}`,
       },
     };
   }
 
-  let nextPlayers = applyOutcomeEffects(players, actingPowerKey, payload, builtOutcome.success ?? []);
+  nextPlayers = applyOutcomeEffects(nextPlayers, actingPowerKey, payload, builtOutcome.success ?? []);
   nextPlayers = maybePropagateModelCapabilityGain(nextPlayers, actingPowerKey, builtOutcome.success ?? []);
 
   let nextManagerState = managerState;
@@ -2271,7 +2295,7 @@ function resolveActionByCard(players, managerState, gameState, actingPowerKey, p
       cardName: card.name,
       roll,
       threshold,
-      outcome: `Success.${targetText}`,
+      outcome: `Success. Guaranteed +1 ${formatTrackLabel(payload.bonusTrack ?? 'resources')}.${targetText}`,
     },
   };
 }
@@ -2378,7 +2402,7 @@ function resolveVictoryOutcome(players, powerKey, secretState) {
   }
 
   if (objective.outcome === 'roll_against_capabilities') {
-    const target = 6 - model.meters.capabilities + actor.meters.safety;
+    const target = 7 - model.meters.capabilities + actor.meters.safety;
     return {
       winnerPowerKey: roll <= target ? powerKey : 'model',
       summary: `${actor.name} rolled ${roll} against target ${target}.`,
@@ -2580,6 +2604,7 @@ export function advanceGameState({ players, managerState, phase, round, currentT
       rulesVersion: RULES_VERSION,
       publicLog: [...(engineState.publicLog ?? [])],
       revealedActions: { ...(engineState.revealedActions ?? {}) },
+      eventReadySelections: { ...(engineState.eventReadySelections ?? {}) },
     },
     round,
   );
@@ -2789,6 +2814,8 @@ export function advanceGameState({ players, managerState, phase, round, currentT
         ...nextEngineState,
         revealedEventKey: null,
         revealedActions: {},
+        eventReadySelections: {},
+        roundStartSnapshot: snapshotPlayers(nextPlayers),
         publicLog: [...nextEngineState.publicLog, `Round ${nextRound} is ready.`].slice(-8),
       },
       nextRound,
