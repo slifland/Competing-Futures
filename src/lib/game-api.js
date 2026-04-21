@@ -299,6 +299,12 @@ export async function initializeGameFromRules(gameId) {
     throw getSchemaSetupError(playersError);
   }
 
+  if ((playersData ?? []).length !== 5) {
+    throw new Error(
+      'Game creation did not seed the five actor rows. Apply supabase/migrations/20260421_create_game_without_demo_dependency.sql, then retry.',
+    );
+  }
+
   const initialized = buildGameInitialization((playersData ?? []).map(mapDbPlayer));
 
   await persistGameState({

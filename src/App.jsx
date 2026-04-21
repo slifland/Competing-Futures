@@ -1483,8 +1483,11 @@ function App() {
       setActionLoading(true);
       setErrorMessage('');
       const fallbackName = `${(profile?.full_name || session?.user?.email || 'Player').split(' ')[0]}'s game`;
-      const gameId = await createGame((createGameName.trim() || fallbackName).trim(), createSeatKey);
+      const gameId = await createGame((createGameName.trim() || fallbackName).trim(), '');
       await initializeGameFromRules(gameId);
+      if (createSeatKey) {
+        await claimSeat(gameId, createSeatKey);
+      }
       setCreateGameName('');
       setCreateSeatKey('');
       setSelectedGameId(gameId);
