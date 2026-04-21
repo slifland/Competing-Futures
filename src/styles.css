@@ -146,8 +146,7 @@ button {
 .topbar,
 .selector-panel,
 .board-panel,
-.lower-grid,
-.game-surface {
+.lower-grid {
   opacity: 0;
   transform: translateY(18px);
   animation: rise 0.75s ease forwards;
@@ -163,10 +162,6 @@ button {
 
 .lower-grid {
   animation-delay: 0.28s;
-}
-
-.game-surface {
-  animation-delay: 0.08s;
 }
 
 .topbar {

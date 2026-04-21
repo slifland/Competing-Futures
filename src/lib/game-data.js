@@ -15,6 +15,7 @@ export const tracks = [
   { key: 'safety', label: 'Safety Investment' },
   { key: 'publicSupport', label: 'Public Support' },
 ];
+const TRACK_COLUMNS = ['capabilities', 'resources', 'safety', 'publicSupport'];
 
 const TRACK_LIMITS = { min: 0, max: 10 };
 const HAND_SIZE = 3;
