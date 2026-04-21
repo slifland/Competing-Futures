@@ -958,7 +958,11 @@ function App() {
   const [profile, setProfile] = React.useState(null);
   const [games, setGames] = React.useState([]);
   const [memberships, setMemberships] = React.useState([]);
-  const [selectedGameId, setSelectedGameId] = React.useState('');
+  const [selectedGameId, setSelectedGameId] = React.useState(() => {
+    if (typeof window === 'undefined') return '';
+    const hash = window.location.hash.slice(1);
+    return hash || '';
+  });
   const [refreshKey, setRefreshKey] = React.useState(0);
   const [boardRefreshTick, setBoardRefreshTick] = React.useState(0);
   const [gameState, setGameState] = React.useState(null);
@@ -983,6 +987,15 @@ function App() {
 
     return window.localStorage.getItem(WALKTHROUGH_STORAGE_KEY) === 'true';
   });
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (selectedGameId) {
+      window.location.hash = selectedGameId;
+    } else {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+  }, [selectedGameId]);
 
   React.useEffect(() => {
     let isMounted = true;
@@ -1745,6 +1758,23 @@ function App() {
       const payload = sanitizeSelectionPayload(cardDefinition, cardDrafts[card.cardKey], activePowerKey);
       await updateTurnSelection(activePlayer.id, card.cardKey, card.name, payload);
 
+      const nextEngineState = {
+        ...(gameState.engineState ?? {}),
+        eventReadySelections: {
+          ...((gameState.engineState ?? {}).eventReadySelections ?? {}),
+          [activePowerKey]: card.cardKey,
+        },
+      };
+
+      await updateGameFlow(activeGame.id, {
+        round: gameState.round,
+        phase: gameState.phase,
+        current_turn_index: gameState.currentTurnIndex ?? 0,
+        status: gameState.status,
+        winner_power_key: gameState.winnerPowerKey,
+        engine_state: nextEngineState,
+      });
+
       setPrivateState((current) => ({
         ...current,
         selectedAction: card.name,
@@ -1756,6 +1786,7 @@ function App() {
         current && current.managerState?.[activePowerKey]
           ? {
               ...current,
+              engineState: nextEngineState,
               managerState: {
                 ...current.managerState,
                 [activePowerKey]: {
@@ -2563,9 +2594,9 @@ function App() {
                       Join this game
                     </button>
                   ) : canSignalEventReady ? (
-                    <button type="button" onClick={handleSignalEventReady} disabled={actionLoading || isCurrentSeatReady}>
-                      {isCurrentSeatReady ? `${readySeatCount}/${turnOrder.length} ready` : 'Ready for event'}
-                    </button>
+                    <span className="ready-status-label">
+                      {isCurrentSeatReady ? `${readySeatCount}/${turnOrder.length} ready` : 'Locking in...'}
+                    </span>
                   ) : (
                     <button type="button" onClick={handleAdvanceFlow} disabled={!canAdvanceFlow}>
                       {advanceFlowLabel}
