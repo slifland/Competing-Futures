@@ -1,4 +1,4 @@
-# Competing-Futures
+ # Competing-Futures
 
 Proof-of-concept React mockup for the Team Indigo strategy game.
 
