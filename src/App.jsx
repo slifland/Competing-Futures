@@ -980,6 +980,7 @@ function App() {
   const [hudPanel, setHudPanel] = React.useState(null);
   const seenAnnouncementsRef = React.useRef(new Set());
   const seenRevealKeysRef = React.useRef(new Set());
+  const channelRef = React.useRef(null);
   const autoAdvanceKeyRef = React.useRef('');
   const [walkthroughDismissed, setWalkthroughDismissed] = React.useState(() => {
     if (typeof window === 'undefined') {
@@ -1139,7 +1140,7 @@ function App() {
     }
 
     const channel = supabase
-      .channel(`game-live-${activeGame.id}`)
+      .channel(`game-live-${activeGame.id}`, { config: { broadcast: { self: false } } })
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'games', filter: `id=eq.${activeGame.id}` },
@@ -1171,9 +1172,15 @@ function App() {
         { event: '*', schema: 'public', table: 'player_cards' },
         () => setBoardRefreshTick((current) => current + 1),
       )
+      .on('broadcast', { event: 'toast' }, ({ payload }) => {
+        setToast(payload);
+      })
       .subscribe();
 
+    channelRef.current = channel;
+
     return () => {
+      channelRef.current = null;
       supabase.removeChannel(channel);
     };
   }, [activeGame?.id, session?.user]);
@@ -1414,6 +1421,10 @@ function App() {
   const allSeatsReadyForEvent =
     turnOrder.every((powerKey) => selectedCardKeysByPower[powerKey]) &&
     readySeatCount === turnOrder.length;
+  const victoryReadySelections = gameState?.engineState?.victoryReadySelections ?? {};
+  const victoryReadySeatCount = turnOrder.filter((powerKey) => Boolean(victoryReadySelections[powerKey])).length;
+  const allSeatsReadyForVictory = currentPhase === 'victory_check' && victoryReadySeatCount === turnOrder.length;
+  const isCurrentSeatVictoryReady = Boolean(activePowerKey && victoryReadySelections[activePowerKey]);
   const canSignalEventReady = Boolean(
     activeMembership?.power_key &&
       activeMembership.power_key === activePowerKey &&
@@ -1432,24 +1443,24 @@ function App() {
   const recommendedPanel =
     currentPhase === 'choose_actions' && !privateState.selectedCardKey
       ? 'cards'
-      : currentPhase === 'choose_actions' && !isCurrentSeatReady
-        ? 'log'
-        : currentPhase === 'victory_check'
-          ? 'objective'
-          : currentPhase === 'resolve_actions'
-            ? 'log'
-            : 'event';
+      : currentPhase === 'victory_check'
+        ? 'objective'
+        : currentPhase === 'resolve_actions'
+          ? 'log'
+          : 'event';
   const nextStepMessage =
     currentPhase === 'choose_actions' && !privateState.selectedCardKey
       ? 'Next: open Cards and lock one action face-down.'
-      : currentPhase === 'choose_actions' && !isCurrentSeatReady
-        ? `Next: mark yourself ready for event reveal. ${readySeatCount}/${turnOrder.length} players ready.`
-        : currentPhase === 'choose_actions'
-          ? `Waiting for the rest of the table. ${readySeatCount}/${turnOrder.length} players ready.`
-          : currentPhase === 'resolve_event'
-            ? 'Global event is revealing and resolves immediately.'
-            : currentPhase === 'resolve_actions'
-              ? 'Watch the action cards flip in order and the board update.'
+      : currentPhase === 'choose_actions'
+        ? `Waiting for the rest of the table. ${readySeatCount}/${turnOrder.length} players ready.`
+        : currentPhase === 'resolve_event'
+          ? 'Global event is revealing and resolves immediately.'
+          : currentPhase === 'resolve_actions'
+            ? 'Watch the action cards flip in order and the board update.'
+            : currentPhase === 'victory_check' && !winner
+              ? isCurrentSeatVictoryReady
+                ? `Waiting for all players. ${victoryReadySeatCount}/${turnOrder.length} ready to advance.`
+                : 'Open Win tab to check objectives and confirm you are ready to advance.'
               : winner
                 ? `${winner.name} has won.`
                 : 'Review objectives while the game checks for wins and prepares the next round.';
@@ -1521,7 +1532,7 @@ function App() {
       (currentPhase === 'choose_actions' && allSeatsReadyForEvent) ||
       currentPhase === 'resolve_event' ||
       (currentPhase === 'resolve_actions' && !winner) ||
-      (currentPhase === 'victory_check' && !winner);
+      (currentPhase === 'victory_check' && !winner && allSeatsReadyForVictory);
 
     if (!shouldAdvance) {
       autoAdvanceKeyRef.current = '';
@@ -1825,6 +1836,11 @@ function App() {
         durationMs: 1800,
         tone: 'card-lock',
       });
+      channelRef.current?.send({
+        type: 'broadcast',
+        event: 'toast',
+        payload: { title: 'Card locked', body: `${activePlayer.name} locked their action.`, durationMs: 1600 },
+      });
       setHudPanel(null);
     } catch (error) {
       setErrorMessage(error.message);
@@ -1858,6 +1874,15 @@ function App() {
           : current,
       );
       setStatusMessage(declared ? 'Victory attempt declared.' : 'Victory attempt withdrawn.');
+      channelRef.current?.send({
+        type: 'broadcast',
+        event: 'toast',
+        payload: {
+          title: declared ? 'Victory declared' : 'Victory withdrawn',
+          body: `${activePlayer.name} ${declared ? 'declared a victory attempt.' : 'withdrew their victory attempt.'}`,
+          durationMs: 2000,
+        },
+      });
     } catch (error) {
       setErrorMessage(error.message);
     } finally {
@@ -1900,6 +1925,10 @@ function App() {
           `Waiting on action choices from ${missingPlayers.map((player) => player.name).join(', ')}.`,
         );
         return;
+      }
+
+      if (currentPhase === 'victory_check') {
+        nextState.engineState = { ...nextState.engineState, victoryReadySelections: {} };
       }
 
       await persistGameState({
@@ -1971,8 +2000,8 @@ function App() {
     }
   }
 
-  async function handleSignalEventReady() {
-    if (!activeGame || !gameState || !activePowerKey || !privateState.selectedCardKey) {
+  async function handleSignalVictoryReady() {
+    if (!activeGame || !gameState || !activePowerKey || currentPhase !== 'victory_check') {
       return;
     }
 
@@ -1981,9 +2010,9 @@ function App() {
       setErrorMessage('');
       const nextEngineState = {
         ...(gameState.engineState ?? {}),
-        eventReadySelections: {
-          ...((gameState.engineState ?? {}).eventReadySelections ?? {}),
-          [activePowerKey]: privateState.selectedCardKey,
+        victoryReadySelections: {
+          ...((gameState.engineState ?? {}).victoryReadySelections ?? {}),
+          [activePowerKey]: true,
         },
       };
 
@@ -2004,7 +2033,7 @@ function App() {
             }
           : current,
       );
-      setStatusMessage(`Ready for event reveal. ${readySeatCount + (isCurrentSeatReady ? 0 : 1)}/${turnOrder.length} players ready.`);
+      setStatusMessage(`Ready to advance. ${victoryReadySeatCount + 1}/${turnOrder.length} players ready.`);
     } catch (error) {
       setErrorMessage(error.message);
     } finally {
@@ -2024,7 +2053,10 @@ function App() {
             ? 'Victory locked'
             : 'Resolve victory and next round';
   const canAdvanceFlow =
-    canManageGame && !actionLoading && !(currentPhase === 'victory_check' && Boolean(winner));
+    canManageGame &&
+    !actionLoading &&
+    !(currentPhase === 'victory_check' && Boolean(winner)) &&
+    (currentPhase !== 'victory_check' || allSeatsReadyForVictory);
   const missingLockPlayers = turnOrder
     .filter((powerKey) => !selectedCardKeysByPower[powerKey])
     .map((powerKey) => boardPlayers.find((player) => player.power_key === powerKey))
@@ -2388,7 +2420,18 @@ function App() {
                   ) : null}
 
                   {hudPanel === 'objective' ? (
-                    <div className="overlay-scroll">
+                    <div className="overlay-scroll overlay-stack">
+                      <div className="overlay-stack">
+                        {tracks.map((track) => (
+                          <TrackRow
+                            key={track.key}
+                            label={track.label}
+                            trackKey={track.key}
+                            players={boardPlayers}
+                            roundStartSnapshot={roundStartSnapshot}
+                          />
+                        ))}
+                      </div>
                       <div className="private-objective">
                         <div className="objective-topline">
                           <div>
@@ -2449,6 +2492,19 @@ function App() {
                           <div className="hero-actions">
                             <button type="button" onClick={() => handleVictoryToggle(!privateState.declaredVictory)} disabled={actionLoading}>
                               {privateState.declaredVictory ? 'Withdraw victory attempt' : 'Declare victory attempt'}
+                            </button>
+                          </div>
+                        ) : null}
+                        {currentPhase === 'victory_check' && canEditVictory ? (
+                          <div className="hero-actions">
+                            <button
+                              type="button"
+                              onClick={handleSignalVictoryReady}
+                              disabled={actionLoading || isCurrentSeatVictoryReady}
+                            >
+                              {isCurrentSeatVictoryReady
+                                ? `${victoryReadySeatCount}/${turnOrder.length} ready to advance`
+                                : 'Ready to advance'}
                             </button>
                           </div>
                         ) : null}

@@ -727,11 +727,12 @@ button {
 }
 
 .game-topbar h1 {
-  margin: 0.25rem 0 0;
-  max-width: 9ch;
-  line-height: 0.95;
-  letter-spacing: -0.05em;
-  font-size: clamp(1.8rem, 4vw, 3rem);
+  margin: 0.15rem 0 0;
+  max-width: 20ch;
+  line-height: 1.2;
+  letter-spacing: 0;
+  font-size: 0.9rem;
+  font-weight: 500;
   overflow-wrap: anywhere;
 }
 
@@ -1455,7 +1456,7 @@ button {
   }
 
   .game-topbar h1 {
-    font-size: clamp(2rem, 11vw, 3.25rem);
+    font-size: 0.9rem;
   }
 
   .game-meta,
