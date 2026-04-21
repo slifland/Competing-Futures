@@ -979,6 +979,7 @@ function App() {
   const [toast, setToast] = React.useState(null);
   const [hudPanel, setHudPanel] = React.useState(null);
   const seenAnnouncementsRef = React.useRef(new Set());
+  const seenRevealKeysRef = React.useRef(new Set());
   const autoAdvanceKeyRef = React.useRef('');
   const [walkthroughDismissed, setWalkthroughDismissed] = React.useState(() => {
     if (typeof window === 'undefined') {
@@ -1331,6 +1332,22 @@ function App() {
   const winner = boardPlayers.find((player) => player.power_key === gameState?.winnerPowerKey) ?? null;
   const revealedActions = gameState?.engineState?.revealedActions ?? {};
   const publicLog = gameState?.engineState?.publicLog ?? [];
+
+  const round = gameState?.round ?? 0;
+  React.useEffect(() => {
+    if (canManageGame) return;
+    for (const [powerKey, reveal] of Object.entries(revealedActions)) {
+      const key = `${round}:${powerKey}`;
+      if (seenRevealKeysRef.current.has(key)) continue;
+      seenRevealKeysRef.current.add(key);
+      const player = boardPlayers.find((p) => p.power_key === powerKey);
+      setToast({
+        title: `${player?.name ?? powerKey} resolved`,
+        body: `${reveal.cardName}: ${reveal.outcome}`,
+        durationMs: 2200,
+      });
+    }
+  }, [revealedActions, round, canManageGame, boardPlayers]);
   const lobbyMembers = gameState?.lobbyMembers ?? [];
   const actionLocks = gameState?.actionLocks ?? {};
   const joinedPlayers = lobbyMembers.filter((member) => member.membership_role === 'player' && member.power_key);
