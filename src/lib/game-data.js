@@ -244,6 +244,23 @@ export function getEventEffectSummaries(event) {
   return (event?.effects ?? []).map((effect) => formatEffectSummary(effect)).filter(Boolean);
 }
 
+function describeResolvedEffects(effects, actingPowerKey, payload) {
+  return (effects ?? []).map((effect) => formatEffectSummary(effect, actingPowerKey, payload)).filter(Boolean);
+}
+
+function buildResolvedOutcomeText({ prefix, actingPowerKey, payload, effects = [], extra = '' }) {
+  const parts = [
+    `${formatActorLabel(actingPowerKey)}: ${formatTrackLabel(payload.bonusTrack ?? 'resources')} +1`,
+    ...describeResolvedEffects(effects, actingPowerKey, payload),
+  ];
+
+  if (extra) {
+    parts.push(extra);
+  }
+
+  return `${prefix} ${parts.join(' | ')}`;
+}
+
 function randomize(items) {
   const next = [...items];
   for (let index = next.length - 1; index > 0; index -= 1) {
@@ -2187,9 +2204,12 @@ function resolveActionByCard(players, managerState, gameState, actingPowerKey, p
         cardName: card.name,
         roll,
         threshold,
-        outcome: failureEffects.length
-          ? `Failure. Guaranteed +1 ${formatTrackLabel(payload.bonusTrack ?? 'resources')}; ${formatDeltas(failureEffects[0].deltas)}`
-          : `Failure. Guaranteed +1 ${formatTrackLabel(payload.bonusTrack ?? 'resources')}.`,
+        outcome: buildResolvedOutcomeText({
+          prefix: 'Failure.',
+          actingPowerKey,
+          payload,
+          effects: failureEffects,
+        }),
       },
     };
   }
@@ -2296,7 +2316,13 @@ function resolveActionByCard(players, managerState, gameState, actingPowerKey, p
       cardName: card.name,
       roll,
       threshold,
-      outcome: `Success. Guaranteed +1 ${formatTrackLabel(payload.bonusTrack ?? 'resources')}.${targetText}`,
+      outcome: buildResolvedOutcomeText({
+        prefix: 'Success.',
+        actingPowerKey,
+        payload,
+        effects: builtOutcome.success ?? [],
+        extra: targetText.trim(),
+      }),
     },
   };
 }
