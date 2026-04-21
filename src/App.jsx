@@ -1055,7 +1055,7 @@ function App() {
 
     const intervalId = window.setInterval(() => {
       setRefreshKey((current) => current + 1);
-    }, 8000);
+    }, 3000);
 
     return () => window.clearInterval(intervalId);
   }, [session?.user]);
@@ -1067,10 +1067,55 @@ function App() {
 
     const intervalId = window.setInterval(() => {
       setBoardRefreshTick((current) => current + 1);
-    }, 2000);
+    }, 1000);
 
     return () => window.clearInterval(intervalId);
   }, [activeGame, session?.user]);
+
+  React.useEffect(() => {
+    if (!supabase || !session?.user || !activeGame?.id) {
+      return undefined;
+    }
+
+    const channel = supabase
+      .channel(`game-live-${activeGame.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'games', filter: `id=eq.${activeGame.id}` },
+        () => {
+          setBoardRefreshTick((current) => current + 1);
+          setRefreshKey((current) => current + 1);
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'players', filter: `game_id=eq.${activeGame.id}` },
+        () => setBoardRefreshTick((current) => current + 1),
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'game_memberships', filter: `game_id=eq.${activeGame.id}` },
+        () => {
+          setBoardRefreshTick((current) => current + 1);
+          setRefreshKey((current) => current + 1);
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'player_private_state' },
+        () => setBoardRefreshTick((current) => current + 1),
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'player_cards' },
+        () => setBoardRefreshTick((current) => current + 1),
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [activeGame?.id, session?.user]);
 
   React.useEffect(() => {
     if (!session?.user || !activeGame) {
