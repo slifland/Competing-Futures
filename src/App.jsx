@@ -1242,13 +1242,13 @@ function App() {
       return;
     }
 
-    setCardDrafts(
+    setCardDrafts((current) =>
       privateState.cards.reduce((accumulator, card) => {
         const cardDefinition = getActionCard(card.definitionKey ?? getBaseCardKey(card.cardKey));
         const sourcePayload =
           privateState.selectedCardKey === card.cardKey
             ? privateState.selectedActionPayload
-            : buildDefaultSelectionPayload(cardDefinition, activePowerKey);
+            : current[card.cardKey] ?? buildDefaultSelectionPayload(cardDefinition, activePowerKey);
 
         accumulator[card.cardKey] = sanitizeSelectionPayload(cardDefinition, sourcePayload, activePowerKey);
         return accumulator;
