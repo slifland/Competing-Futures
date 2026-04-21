@@ -384,6 +384,45 @@ function formatPercent(value) {
   return `${Math.round(value * 100)}%`;
 }
 
+function getActionFormulaDetails(player, formula) {
+  if (!player || !formula) {
+    return 'No roll formula available.';
+  }
+
+  const termLabels = formula.terms.map((term) => {
+    const current = player.meters[term.track] ?? 0;
+    const track = tracks.find((entry) => entry.key === term.track)?.label ?? term.track;
+    return `${term.weight}×${track} (${current})`;
+  });
+  const weightedValue = formula.terms.reduce(
+    (sum, term) => sum + (player.meters[term.track] ?? 0) * term.weight,
+    0,
+  );
+  const threshold = Math.floor((formula.base - 1) - formula.difficulty * weightedValue);
+
+  return `Formula: target = ${formula.base - 1} - ${formula.difficulty}×(${termLabels.join(' + ')}). Current target = ${threshold}, so you succeed on d10 >= ${threshold}.`;
+}
+
+function getNextResolveIndex(actionOrder, revealedActions, currentTurnIndex = 0) {
+  if (!actionOrder?.length) {
+    return 0;
+  }
+
+  for (let index = Math.max(0, currentTurnIndex); index < actionOrder.length; index += 1) {
+    if (!revealedActions?.[actionOrder[index]]) {
+      return index;
+    }
+  }
+
+  for (let index = 0; index < Math.max(0, currentTurnIndex); index += 1) {
+    if (!revealedActions?.[actionOrder[index]]) {
+      return index;
+    }
+  }
+
+  return Math.max(0, Math.min(currentTurnIndex, actionOrder.length - 1));
+}
+
 function parseObjectiveText(objectiveText) {
   if (!objectiveText) {
     return null;
@@ -674,29 +713,37 @@ function evaluateObjectiveCondition(condition, players, activePowerKey) {
 
 function getObjectiveRollSummary(parsedObjective, activePlayer, players, objectiveEligible) {
   if (!parsedObjective || !activePlayer) {
-    return { label: 'No objective loaded', chance: null };
+    return { label: 'No objective loaded', chance: null, details: '' };
   }
 
   if (!objectiveEligible) {
-    return { label: 'Conditions not met', chance: 0 };
+    return { label: 'Conditions not met', chance: 0, details: 'Meet every listed condition before this roll becomes available.' };
   }
 
   if (parsedObjective.outcome === 'Automatic Victory') {
-    return { label: 'Automatic win', chance: 1 };
+    return { label: 'Automatic win', chance: 1, details: 'No die roll needed. If all criteria are met and you declare, this objective wins automatically.' };
   }
 
   if (parsedObjective.outcome === 'Roll For Safety') {
     const safety = activePlayer.meters.safety ?? 0;
-    return { label: `Roll <= Safety ${safety}`, chance: safety / 10 };
+    return {
+      label: `Roll <= Safety ${safety}`,
+      chance: safety / 10,
+      details: `Formula: win on d10 <= Safety. Current Safety = ${safety}, so winning rolls are 1-${safety}.`,
+    };
   }
 
   if (parsedObjective.outcome === 'Roll Safety Against Capabilities') {
     const model = players.find((player) => player.power_key === 'model');
     const target = Math.max(0, Math.min(10, 7 - (model?.meters.capabilities ?? 0) + (activePlayer.meters.safety ?? 0)));
-    return { label: `Roll <= ${target}`, chance: target / 10 };
+    return {
+      label: `Roll <= ${target}`,
+      chance: target / 10,
+      details: `Formula: target = 7 - Model Capabilities + Your Safety. Current target = 7 - ${model?.meters.capabilities ?? 0} + ${activePlayer.meters.safety ?? 0} = ${target}. Win on d10 <= ${target}.`,
+    };
   }
 
-  return { label: parsedObjective.outcome, chance: null };
+  return { label: parsedObjective.outcome, chance: null, details: 'This outcome uses a custom rule not yet broken out into a visible formula.' };
 }
 
 function getRequirementState(cardDefinition, players, currentEvent) {
@@ -1260,8 +1307,13 @@ function App() {
   const currentPhaseDefinition = getPhaseDefinition(currentPhase);
   const currentEvent = getCurrentEvent({ phase: currentPhase, engineState: gameState?.engineState ?? {} });
   const currentOrder = gameState?.engineState?.actionOrder ?? turnOrder;
+  const nextResolveIndex = getNextResolveIndex(
+    currentOrder,
+    gameState?.engineState?.revealedActions ?? {},
+    gameState?.currentTurnIndex ?? 0,
+  );
   const currentTurnPowerKey =
-    currentPhase === 'resolve_actions' ? currentOrder[gameState?.currentTurnIndex ?? 0] ?? null : null;
+    currentPhase === 'resolve_actions' ? currentOrder[nextResolveIndex] ?? null : null;
   const currentTurnPlayer = boardPlayers.find((player) => player.power_key === currentTurnPowerKey) ?? null;
   const winner = boardPlayers.find((player) => player.power_key === gameState?.winnerPowerKey) ?? null;
   const revealedActions = gameState?.engineState?.revealedActions ?? {};
@@ -1779,7 +1831,7 @@ function App() {
         managerState: gameState.managerState,
         phase: currentPhase,
         round: gameState.round,
-        currentTurnIndex: gameState.currentTurnIndex ?? 0,
+        currentTurnIndex: currentPhase === 'resolve_actions' ? nextResolveIndex : gameState.currentTurnIndex ?? 0,
         engineState: gameState.engineState ?? {},
       });
 
@@ -1847,7 +1899,7 @@ function App() {
 
       setStatusMessage(nextState.statusMessage);
       if (currentPhase === 'resolve_actions') {
-        const actingPowerKey = gameState.engineState?.actionOrder?.[gameState.currentTurnIndex ?? 0] ?? currentTurnPowerKey;
+        const actingPowerKey = gameState.engineState?.actionOrder?.[nextResolveIndex] ?? currentTurnPowerKey;
         const actingPlayerLabel =
           boardPlayers.find((player) => player.power_key === actingPowerKey)?.name ?? 'A player';
         const revealedAction = nextState.engineState?.revealedActions?.[actingPowerKey];
@@ -2132,6 +2184,7 @@ function App() {
                           const isSelected = card.cardKey === privateState.selectedCardKey;
                           const successThreshold = evaluateFormulaForDisplay(activePlayer, cardDefinition?.formula);
                           const rollSuccessChance = getRollSuccessChance(successThreshold);
+                          const formulaDetails = getActionFormulaDetails(activePlayer, cardDefinition?.formula);
                           const requirementState = getRequirementState(cardDefinition, boardPlayers, currentEvent);
                           const effectiveChance =
                             requirementState && !requirementState.met ? 0 : rollSuccessChance;
@@ -2192,6 +2245,11 @@ function App() {
                                   ))}
                                 </div>
                               ) : null}
+                              <div className="impact-notes">
+                                <p>
+                                  <strong>How success odds are calculated:</strong> {formulaDetails}
+                                </p>
+                              </div>
                               {canEditSeatAction ? (
                                 <>
                                   <label className="form-label">
@@ -2307,6 +2365,13 @@ function App() {
                               <strong>{formatPercent(objectiveRollSummary.chance)}</strong>
                               <small>{objectiveEligible ? 'Based on current board state' : 'Blocked until all criteria are met'}</small>
                             </div>
+                          </div>
+                        ) : null}
+                        {parsedObjective ? (
+                          <div className="impact-notes">
+                            <p>
+                              <strong>How this percentage is calculated:</strong> {objectiveRollSummary.details}
+                            </p>
                           </div>
                         ) : null}
                         {objectiveChecks.length ? (
