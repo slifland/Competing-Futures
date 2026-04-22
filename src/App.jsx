@@ -650,6 +650,13 @@ function evaluateObjectiveCondition(condition, players, activePowerKey) {
       }),
     },
     {
+      match: /^Safety >= Capabilities$/,
+      get: () => ({
+        met: (self?.meters.safety ?? 0) >= (self?.meters.capabilities ?? 0),
+        current: `${self?.meters.safety ?? 0} vs ${self?.meters.capabilities ?? 0}`,
+      }),
+    },
+    {
       match: /^Capabilities > Safety$/,
       get: () => ({
         met: (self?.meters.capabilities ?? 0) > (self?.meters.safety ?? 0),

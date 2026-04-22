@@ -436,7 +436,7 @@ const objectiveDecks = {
       conditions: [
         'Max Frontier Lab Capabilities >= 8',
         'Government Safety Investment >= 8',
-        'Max Frontier Lab Resources <= 6',
+        'Max Frontier Lab Resources <= 7',
         'Max Frontier Lab Capabilities > China Capabilities OR Max Frontier Lab Capabilities = 10',
       ],
       check(players) {
@@ -444,7 +444,7 @@ const objectiveDecks = {
         return (
           ctx.maxLab.capabilities >= 8 &&
           ctx.us.meters.safety >= 8 &&
-          ctx.maxLab.resources <= 6 &&
+          ctx.maxLab.resources <= 7 &&
           (ctx.maxLab.capabilities > ctx.china.meters.capabilities || ctx.maxLab.capabilities === 10)
         );
       },
@@ -458,14 +458,14 @@ const objectiveDecks = {
       weight: 28.33,
       conditions: [
         'Max Frontier Lab Capabilities >= 8',
-        'Max Frontier Lab Resources <= 6',
+        'Max Frontier Lab Resources <= 7',
         'Max Frontier Lab Capabilities > China Capabilities OR Max Frontier Lab Capabilities = 10',
       ],
       check(players) {
         const ctx = createObjectiveContext(players);
         return (
           ctx.maxLab.capabilities >= 8 &&
-          ctx.maxLab.resources <= 6 &&
+          ctx.maxLab.resources <= 7 &&
           (ctx.maxLab.capabilities > ctx.china.meters.capabilities || ctx.maxLab.capabilities === 10)
         );
       },
@@ -613,18 +613,18 @@ const objectiveDecks = {
       outcome: 'roll_for_safety',
       weight: 15,
       conditions: [
-        'Capabilities >= 9',
+        'Capabilities >= 8',
         'Safety >= 8',
-        'Safety > Capabilities',
+        'Safety >= Capabilities',
         'Capabilities > Chinese Capabilities OR Capabilities = 10',
         'Public Support >= 6',
       ],
       check(players, powerKey) {
         const ctx = createObjectiveContext(players, powerKey);
         return (
-          ctx.self.meters.capabilities >= 9 &&
+          ctx.self.meters.capabilities >= 8 &&
           ctx.self.meters.safety >= 8 &&
-          ctx.self.meters.safety > ctx.self.meters.capabilities &&
+          ctx.self.meters.safety >= ctx.self.meters.capabilities &&
           (ctx.self.meters.capabilities > ctx.china.meters.capabilities ||
             ctx.self.meters.capabilities === 10) &&
           ctx.self.meters.publicSupport >= 6
@@ -712,13 +712,13 @@ const objectiveDecks = {
       description: 'The AI is fully aligned and wants to help society safely.',
       outcome: 'roll_for_safety',
       weight: 15,
-      conditions: ['Capabilities >= 8', 'Safety >= 8', 'Safety > Capabilities', 'Resources > 5'],
+      conditions: ['Capabilities >= 8', 'Safety >= 8', 'Safety >= Capabilities', 'Resources > 5'],
       check(players) {
         const ctx = createObjectiveContext(players);
         return (
           ctx.model.meters.capabilities >= 8 &&
           ctx.model.meters.safety >= 8 &&
-          ctx.model.meters.safety > ctx.model.meters.capabilities &&
+          ctx.model.meters.safety >= ctx.model.meters.capabilities &&
           ctx.model.meters.resources > 5
         );
       },
@@ -1241,7 +1241,7 @@ const actionDecks = {
     {
       key: 'new-product-launch',
       name: 'New Product Launch',
-      count: 2,
+      count: 1,
       formula: {
         base: 10,
         difficulty: 1.1,
@@ -1337,7 +1337,7 @@ const actionDecks = {
     {
       key: 'ai-safety-program',
       name: 'AI Safety Program',
-      count: 1,
+      count: 2,
       formula: {
         base: 10,
         difficulty: 0.8,
@@ -1446,10 +1446,10 @@ const actionDecks = {
       name: 'State AI Funding',
       count: 3,
       formula: { base: 10, difficulty: 1, terms: [{ track: 'resources', weight: 1 }] },
-      summary: 'Success: self +1 Capabilities and -1 Resources. Fail: self -1 Resources.',
+      summary: 'Success: self +1 Capabilities, -1 Resources, +1 Safety. Fail: self -1 Resources.',
       buildOutcome() {
         return {
-          success: [{ target: 'self', deltas: { capabilities: 1, resources: -1 } }],
+          success: [{ target: 'self', deltas: { capabilities: 1, resources: -1, safety: 1 } }],
           failure: [{ target: 'self', deltas: { resources: -1 } }],
         };
       },
@@ -1607,7 +1607,7 @@ const actionDecks = {
         ],
       },
       summary:
-        'If Model Capabilities < 5: success gives self +1 Capabilities, +1 Safety, -1 Resources and both labs +1 Capabilities. If >= 5: success gives self +3 Capabilities and -1 Resources. Fail: self -1 Resources.',
+        'If Model Capabilities < 5: success gives self +1 Capabilities, +1 Safety, -1 Resources and both labs +1 Capabilities. If >= 5: success gives self +2 Capabilities and -1 Resources. Fail: self -1 Resources.',
       buildOutcome(_payload, players) {
         const playerMap = getPlayerMap(players);
         const model = playerMap.get('model');
@@ -1622,7 +1622,7 @@ const actionDecks = {
               failure: [{ target: 'self', deltas: { resources: -1 } }],
             }
           : {
-              success: [{ target: 'self', deltas: { capabilities: 3, resources: -1 } }],
+              success: [{ target: 'self', deltas: { capabilities: 2, resources: -1 } }],
               failure: [{ target: 'self', deltas: { resources: -1 } }],
             };
       },
