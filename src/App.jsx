@@ -2041,6 +2041,11 @@ function App() {
           : current,
       );
       setStatusMessage(`Ready to advance. ${victoryReadySeatCount + 1}/${turnOrder.length} players ready.`);
+      setToast({
+        title: 'You are ready',
+        body: `Waiting on ${turnOrder.length - (victoryReadySeatCount + 1)} more player(s) to advance.`,
+        durationMs: 1800,
+      });
     } catch (error) {
       setErrorMessage(error.message);
     } finally {
@@ -2510,11 +2515,12 @@ function App() {
                           <div className="hero-actions">
                             <button
                               type="button"
+                              className={isCurrentSeatVictoryReady ? 'ready-confirmed' : ''}
                               onClick={handleSignalVictoryReady}
                               disabled={actionLoading || isCurrentSeatVictoryReady}
                             >
                               {isCurrentSeatVictoryReady
-                                ? `${victoryReadySeatCount}/${turnOrder.length} ready to advance`
+                                ? `✓ You are ready (${victoryReadySeatCount}/${turnOrder.length})`
                                 : 'Ready to advance'}
                             </button>
                           </div>
@@ -2678,8 +2684,8 @@ function App() {
                       Join this game
                     </button>
                   ) : canSignalEventReady ? (
-                    <span className="ready-status-label">
-                      {isCurrentSeatReady ? `${readySeatCount}/${turnOrder.length} ready` : 'Locking in...'}
+                    <span className={isCurrentSeatReady ? 'ready-status-label ready-confirmed' : 'ready-status-label'}>
+                      {isCurrentSeatReady ? `✓ You are ready (${readySeatCount}/${turnOrder.length})` : 'Locking in...'}
                     </span>
                   ) : (
                     <button type="button" onClick={handleAdvanceFlow} disabled={!canAdvanceFlow}>

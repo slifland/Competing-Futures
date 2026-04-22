@@ -937,6 +937,26 @@ button {
   border-radius: 1.8rem;
 }
 
+.ready-status-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.9rem 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--muted);
+}
+
+.ready-confirmed,
+button.ready-confirmed:disabled {
+  background: rgba(110, 231, 183, 0.18);
+  border-color: rgba(110, 231, 183, 0.55);
+  color: #b9f5d2;
+  opacity: 1;
+}
+
 .status-readout span {
   display: block;
   color: var(--muted);
