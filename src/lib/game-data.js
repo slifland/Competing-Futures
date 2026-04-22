@@ -2625,16 +2625,13 @@ function flattenHandRows(handRowsByPower, managerState) {
 export function advanceGameState({ players, managerState, phase, round, currentTurnIndex, engineState }) {
   let nextPlayers = normalizePlayers(players);
   let nextManagerState = { ...managerState };
-  let nextEngineState = withPreparedEvent(
-    {
-      ...engineState,
-      rulesVersion: RULES_VERSION,
-      publicLog: [...(engineState.publicLog ?? [])],
-      revealedActions: { ...(engineState.revealedActions ?? {}) },
-      eventReadySelections: { ...(engineState.eventReadySelections ?? {}) },
-    },
-    round,
-  );
+  let nextEngineState = {
+    ...engineState,
+    rulesVersion: RULES_VERSION,
+    publicLog: [...(engineState.publicLog ?? [])],
+    revealedActions: { ...(engineState.revealedActions ?? {}) },
+    eventReadySelections: { ...(engineState.eventReadySelections ?? {}) },
+  };
   let nextPhase = phase;
   let nextTurnIndex = currentTurnIndex;
   let winnerPowerKey = null;
