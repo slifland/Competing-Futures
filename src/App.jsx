@@ -650,6 +650,13 @@ function evaluateObjectiveCondition(condition, players, activePowerKey) {
       }),
     },
     {
+      match: /^Safety >= Capabilities$/,
+      get: () => ({
+        met: (self?.meters.safety ?? 0) >= (self?.meters.capabilities ?? 0),
+        current: `${self?.meters.safety ?? 0} vs ${self?.meters.capabilities ?? 0}`,
+      }),
+    },
+    {
       match: /^Capabilities > Safety$/,
       get: () => ({
         met: (self?.meters.capabilities ?? 0) > (self?.meters.safety ?? 0),
@@ -2268,6 +2275,10 @@ function App() {
                           const requirementState = getRequirementState(cardDefinition, boardPlayers, currentEvent);
                           const effectiveChance =
                             requirementState && !requirementState.met ? 0 : rollSuccessChance;
+                          const bonusTrackOptions =
+                            activePowerKey === 'model'
+                              ? tracks.filter((track) => track.key !== 'capabilities')
+                              : tracks;
                           const outcomeRows = buildOutcomeRows(
                             cardDefinition,
                             activePowerKey,
@@ -2347,7 +2358,7 @@ function App() {
                                         }))
                                       }
                                     >
-                                      {tracks.map((track) => (
+                                      {bonusTrackOptions.map((track) => (
                                         <option key={track.key} value={track.key}>
                                           +1 {track.label}
                                         </option>
