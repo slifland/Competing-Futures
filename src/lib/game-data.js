@@ -167,6 +167,12 @@ function getLabKeys() {
   return ['lab-a', 'lab-b'];
 }
 
+function getAllowedBonusTracks(actingPowerKey) {
+  return actingPowerKey === 'model'
+    ? TRACK_COLUMNS.filter((trackKey) => trackKey !== 'capabilities')
+    : TRACK_COLUMNS;
+}
+
 function formatTrackLabel(trackKey) {
   return tracks.find((track) => track.key === trackKey)?.label ?? trackKey;
 }
@@ -1948,7 +1954,8 @@ function actorChoicesForCard(card, actingPowerKey) {
 }
 
 export function buildDefaultSelectionPayload(card, actingPowerKey) {
-  const payload = { bonusTrack: 'resources' };
+  const [defaultBonusTrack] = getAllowedBonusTracks(actingPowerKey);
+  const payload = { bonusTrack: defaultBonusTrack ?? 'resources' };
 
   if (!card?.selection) {
     return payload;
@@ -1978,7 +1985,8 @@ export function buildDefaultSelectionPayload(card, actingPowerKey) {
 
 export function sanitizeSelectionPayload(card, payload, actingPowerKey) {
   const fallback = buildDefaultSelectionPayload(card, actingPowerKey);
-  const bonusTrack = TRACK_COLUMNS.includes(payload?.bonusTrack) ? payload.bonusTrack : fallback.bonusTrack;
+  const allowedBonusTracks = getAllowedBonusTracks(actingPowerKey);
+  const bonusTrack = allowedBonusTracks.includes(payload?.bonusTrack) ? payload.bonusTrack : fallback.bonusTrack;
 
   if (!card?.selection) {
     return { bonusTrack };
