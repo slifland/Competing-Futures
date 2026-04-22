@@ -912,7 +912,7 @@ button {
 
 .status-bar-meta {
   display: grid;
-  grid-template-columns: repeat(3, minmax(9rem, 1fr)) minmax(34rem, 1.8fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 3fr);
   gap: 0.8rem;
   align-items: stretch;
 }
