@@ -2511,20 +2511,6 @@ function App() {
                             </button>
                           </div>
                         ) : null}
-                        {currentPhase === 'victory_check' && canEditVictory ? (
-                          <div className="hero-actions">
-                            <button
-                              type="button"
-                              className={isCurrentSeatVictoryReady ? 'ready-confirmed' : ''}
-                              onClick={handleSignalVictoryReady}
-                              disabled={actionLoading || isCurrentSeatVictoryReady}
-                            >
-                              {isCurrentSeatVictoryReady
-                                ? `✓ You are ready (${victoryReadySeatCount}/${turnOrder.length})`
-                                : 'Ready to advance'}
-                            </button>
-                          </div>
-                        ) : null}
                       </div>
                     </div>
                   ) : null}
@@ -2688,9 +2674,23 @@ function App() {
                       {isCurrentSeatReady ? `✓ You are ready (${readySeatCount}/${turnOrder.length})` : 'Locking in...'}
                     </span>
                   ) : (
-                    <button type="button" onClick={handleAdvanceFlow} disabled={!canAdvanceFlow}>
-                      {advanceFlowLabel}
-                    </button>
+                    <>
+                      {currentPhase === 'victory_check' && canEditVictory ? (
+                        <button
+                          type="button"
+                          className={isCurrentSeatVictoryReady ? 'ready-confirmed' : ''}
+                          onClick={handleSignalVictoryReady}
+                          disabled={actionLoading || isCurrentSeatVictoryReady}
+                        >
+                          {isCurrentSeatVictoryReady
+                            ? `✓ You are ready (${victoryReadySeatCount}/${turnOrder.length})`
+                            : 'Ready to advance'}
+                        </button>
+                      ) : null}
+                      <button type="button" onClick={handleAdvanceFlow} disabled={!canAdvanceFlow}>
+                        {advanceFlowLabel}
+                      </button>
+                    </>
                   )}
                   {canManageGame ? (
                     <button type="button" className="ghost" onClick={handleCompleteGame} disabled={actionLoading}>
