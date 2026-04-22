@@ -18,6 +18,39 @@ function getSupabaseClient() {
   return supabase;
 }
 
+const DEFAULT_RPC_TIMEOUT_MS = 12000;
+
+function withTimeout(promise, ms, label) {
+  let timerId;
+  const timeout = new Promise((_, reject) => {
+    timerId = setTimeout(() => {
+      reject(
+        new Error(
+          `${label} timed out after ${ms}ms. The Supabase project may be cold-starting or the request is stuck — retry in a moment.`,
+        ),
+      );
+    }, ms);
+  });
+
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timerId));
+}
+
+const ensureProfilePromiseByUser = new Map();
+
+export function resetProfileCache() {
+  ensureProfilePromiseByUser.clear();
+}
+
+async function runEnsureProfile(client) {
+  const result = await withTimeout(client.rpc('ensure_profile'), DEFAULT_RPC_TIMEOUT_MS, 'ensure_profile');
+
+  if (result.error) {
+    throw getSchemaSetupError(result.error);
+  }
+
+  return result;
+}
+
 function normalizeProfile(user, profileData) {
   if (profileData) {
     return profileData;
@@ -112,11 +145,16 @@ function mapDbPlayer(player) {
 
 export async function fetchAccountContext(user) {
   const client = getSupabaseClient();
-  const ensureResult = await client.rpc('ensure_profile');
 
-  if (ensureResult.error) {
-    throw getSchemaSetupError(ensureResult.error);
+  let ensurePromise = ensureProfilePromiseByUser.get(user.id);
+  if (!ensurePromise) {
+    ensurePromise = runEnsureProfile(client).catch((error) => {
+      ensureProfilePromiseByUser.delete(user.id);
+      throw error;
+    });
+    ensureProfilePromiseByUser.set(user.id, ensurePromise);
   }
+  await ensurePromise;
 
   const [{ data: profileData, error: profileError }, { data: membershipsData, error: membershipsError }] =
     await Promise.all([
@@ -275,10 +313,14 @@ export async function fetchPrivateSeat(playerId) {
 
 export async function createGame(gameName, seatPowerKey) {
   const client = getSupabaseClient();
-  const { data, error } = await client.rpc('create_game_with_defaults', {
-    game_name_input: gameName,
-    seat_power_key_input: seatPowerKey || null,
-  });
+  const { data, error } = await withTimeout(
+    client.rpc('create_game_with_defaults', {
+      game_name_input: gameName,
+      seat_power_key_input: seatPowerKey || null,
+    }),
+    DEFAULT_RPC_TIMEOUT_MS,
+    'create_game',
+  );
 
   if (error) {
     throw error;

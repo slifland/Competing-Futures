@@ -26,6 +26,7 @@ import {
   joinGameByCode,
   leaveGame,
   persistGameState,
+  resetProfileCache,
   setVictoryDeclaration,
   updateGameFlow,
   updateGameStatus,
@@ -989,6 +990,7 @@ function App() {
   const seenRevealKeysRef = React.useRef(new Set());
   const channelRef = React.useRef(null);
   const autoAdvanceKeyRef = React.useRef('');
+  const selectedGameIdRef = React.useRef('');
   const [walkthroughDismissed, setWalkthroughDismissed] = React.useState(() => {
     if (typeof window === 'undefined') {
       return false;
@@ -1088,7 +1090,8 @@ function App() {
         setGames(data.games);
         setMemberships(data.memberships);
 
-        if (selectedGameId && !data.games.some((game) => game.id === selectedGameId)) {
+        const currentSelectedId = selectedGameIdRef.current;
+        if (currentSelectedId && !data.games.some((game) => game.id === currentSelectedId)) {
           setSelectedGameId(data.games[0]?.id ?? '');
         }
 
@@ -1110,7 +1113,11 @@ function App() {
     return () => {
       isMounted = false;
     };
-  }, [authReady, refreshKey, selectedGameId, session?.user]);
+  }, [authReady, refreshKey, session?.user]);
+
+  React.useEffect(() => {
+    selectedGameIdRef.current = selectedGameId;
+  }, [selectedGameId]);
 
   const activeGame = games.find((game) => game.id === selectedGameId) ?? null;
   const activeMembership = memberships.find((membership) => membership.game_id === selectedGameId) ?? null;
@@ -1127,6 +1134,30 @@ function App() {
     }, 3000);
 
     return () => window.clearInterval(intervalId);
+  }, [session?.user]);
+
+  React.useEffect(() => {
+    if (!supabase || !session?.user) {
+      return undefined;
+    }
+
+    const channel = supabase
+      .channel(`lobby-live-${session.user.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'games' },
+        () => setRefreshKey((current) => current + 1),
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'game_memberships' },
+        () => setRefreshKey((current) => current + 1),
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [session?.user]);
 
   React.useEffect(() => {
@@ -1172,12 +1203,22 @@ function App() {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'player_private_state' },
-        () => setBoardRefreshTick((current) => current + 1),
+        (payload) => {
+          const pid = payload.new?.player_id ?? payload.old?.player_id;
+          if (pid && pid.startsWith(`${activeGame.id}-`)) {
+            setBoardRefreshTick((current) => current + 1);
+          }
+        },
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'player_cards' },
-        () => setBoardRefreshTick((current) => current + 1),
+        (payload) => {
+          const pid = payload.new?.player_id ?? payload.old?.player_id;
+          if (pid && pid.startsWith(`${activeGame.id}-`)) {
+            setBoardRefreshTick((current) => current + 1);
+          }
+        },
       )
       .on('broadcast', { event: 'toast' }, ({ payload }) => {
         setToast(payload);
@@ -1610,6 +1651,7 @@ function App() {
       return;
     }
 
+    resetProfileCache();
     setSelectedGameId('');
     setAuthLoading(false);
   }
