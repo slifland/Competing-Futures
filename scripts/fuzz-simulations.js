@@ -150,32 +150,53 @@ function shuffle(items) {
 }
 
 function buildRandomSelectionPayload(card, actingPowerKey) {
+  const fallback = buildDefaultSelectionPayload(card, actingPowerKey);
+  const bonusTrackOptions =
+    actingPowerKey === 'model'
+      ? tracks.filter((track) => track.key !== 'capabilities')
+      : tracks;
+  const payload = {
+    ...fallback,
+    bonusTrack: chooseRandom(bonusTrackOptions)?.key ?? fallback.bonusTrack ?? 'resources',
+  };
+
   if (!card?.selection) {
-    return {};
+    return payload;
   }
 
   const options = (card.selection.options ?? []).filter((powerKey) => powerKey !== actingPowerKey);
 
   if (card.selection.kind === 'target') {
-    return { targetActorKey: chooseRandom(options) };
-  }
-
-  if (card.selection.kind === 'targets') {
-    return { targetActorKeys: shuffle(options).slice(0, card.selection.count) };
-  }
-
-  if (card.selection.kind === 'allocation') {
-    return { capabilityPoints: randomInt(card.selection.total + 1) };
-  }
-
-  if (card.selection.kind === 'target_and_axis') {
     return {
-      targetActorKey: chooseRandom(options),
-      track: Math.random() < 0.5 ? 'capabilities' : 'safety',
+      ...payload,
+      targetActorKey: options.length ? chooseRandom(options) : fallback.targetActorKey,
     };
   }
 
-  return buildDefaultSelectionPayload(card, actingPowerKey);
+  if (card.selection.kind === 'targets') {
+    return {
+      ...payload,
+      targetActorKeys: shuffle(options).slice(0, card.selection.count ?? options.length),
+    };
+  }
+
+  if (card.selection.kind === 'allocation') {
+    return {
+      ...payload,
+      capabilityPoints: randomInt((card.selection.total ?? 0) + 1),
+    };
+  }
+
+  if (card.selection.kind === 'target_and_axis') {
+    const trackOptions = card.selection.tracks ?? ['capabilities', 'safety'];
+    return {
+      ...payload,
+      targetActorKey: options.length ? chooseRandom(options) : fallback.targetActorKey,
+      track: chooseRandom(trackOptions) ?? fallback.track ?? 'capabilities',
+    };
+  }
+
+  return payload;
 }
 
 function normalizeOutcomeLabel(outcome) {

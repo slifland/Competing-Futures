@@ -2,6 +2,7 @@ import React from 'react';
 import { supabase, supabaseConfigError } from './lib/supabase.js';
 import {
   advanceGameState,
+  buildGameInitialization,
   buildDefaultSelectionPayload,
   getActionCard,
   getBaseCardKey,
@@ -322,6 +323,128 @@ const EMPTY_PRIVATE_STATE = {
   cards: [],
 };
 const WALKTHROUGH_STORAGE_KEY = 'cf-lobby-walkthrough-dismissed';
+const LOCAL_GAME_ID = 'local-robots';
+const LOCAL_JOIN_CODE = 'LOCAL';
+
+function randomInt(maxExclusive) {
+  return Math.floor(Math.random() * maxExclusive);
+}
+
+function chooseRandom(items) {
+  return items[randomInt(items.length)];
+}
+
+function shuffle(items) {
+  const next = [...items];
+
+  for (let index = next.length - 1; index > 0; index -= 1) {
+    const swapIndex = randomInt(index + 1);
+    [next[index], next[swapIndex]] = [next[swapIndex], next[index]];
+  }
+
+  return next;
+}
+
+function buildRandomSelectionPayload(card, actingPowerKey) {
+  const fallback = buildDefaultSelectionPayload(card, actingPowerKey);
+  const bonusTrackOptions =
+    actingPowerKey === 'model'
+      ? tracks.filter((track) => track.key !== 'capabilities')
+      : tracks;
+  const payload = {
+    ...fallback,
+    bonusTrack: chooseRandom(bonusTrackOptions)?.key ?? fallback.bonusTrack ?? 'resources',
+  };
+
+  if (!card?.selection) {
+    return payload;
+  }
+
+  const options = (card.selection.options ?? []).filter((powerKey) => powerKey !== actingPowerKey);
+
+  if (card.selection.kind === 'target') {
+    return {
+      ...payload,
+      targetActorKey: options.length ? chooseRandom(options) : fallback.targetActorKey,
+    };
+  }
+
+  if (card.selection.kind === 'targets') {
+    return {
+      ...payload,
+      targetActorKeys: shuffle(options).slice(0, card.selection.count ?? options.length),
+    };
+  }
+
+  if (card.selection.kind === 'allocation') {
+    return {
+      ...payload,
+      capabilityPoints: randomInt((card.selection.total ?? 0) + 1),
+    };
+  }
+
+  if (card.selection.kind === 'target_and_axis') {
+    const trackOptions = card.selection.tracks ?? ['capabilities', 'safety'];
+    return {
+      ...payload,
+      targetActorKey: options.length ? chooseRandom(options) : fallback.targetActorKey,
+      track: chooseRandom(trackOptions) ?? fallback.track ?? 'capabilities',
+    };
+  }
+
+  return payload;
+}
+
+function buildLocalGameState(humanPowerKey) {
+  const initialization = buildGameInitialization(turnOrder.map((powerKey) => ({ id: powerKey, power_key: powerKey })));
+  const managerState = Object.fromEntries(
+    turnOrder.map((powerKey) => {
+      const privateState = initialization.privateStates.find((entry) => entry.player_id === powerKey);
+      const cards = initialization.handRows.filter((row) => row.player_id === powerKey);
+
+      return [
+        powerKey,
+        {
+          playerId: powerKey,
+          objective: privateState?.objective ?? '',
+          selectedAction: '',
+          selectedCardKey: privateState?.selected_card_key ?? null,
+          selectedActionPayload: privateState?.selected_action_payload ?? {},
+          declaredVictory: Boolean(privateState?.declared_victory),
+          secretState: privateState?.secret_state ?? {},
+          hand: cards.map((card) => ({
+            position: card.position,
+            cardKey: card.card_key,
+            definitionKey: getBaseCardKey(card.card_key),
+            name: card.name,
+            text: card.text,
+          })),
+        },
+      ];
+    }),
+  );
+
+  return {
+    humanPowerKey,
+    players: initialization.players,
+    managerState,
+    phase: 'choose_actions',
+    round: 1,
+    currentTurnIndex: 0,
+    engineState: initialization.engineState,
+    status: 'active',
+    winnerPowerKey: null,
+    joinCode: LOCAL_JOIN_CODE,
+    lobbyMembers: turnOrder.map((powerKey) => ({
+      game_id: LOCAL_GAME_ID,
+      membership_role: 'player',
+      power_key: powerKey,
+      user_id: powerKey === humanPowerKey ? 'local-human' : `robot-${powerKey}`,
+      display_name: powerKey === humanPowerKey ? 'You' : `Robot ${powerOptions.find((power) => power.id === powerKey)?.shortName ?? powerKey.toUpperCase()}`,
+    })),
+    actionLocks: {},
+  };
+}
 
 function buildDisplayContext(players, selfPowerKey = null) {
   const playerMap = new Map(players.map((player) => [player.power_key, player]));
@@ -986,6 +1109,8 @@ function App() {
   const [errorMessage, setErrorMessage] = React.useState('');
   const [toast, setToast] = React.useState(null);
   const [hudPanel, setHudPanel] = React.useState(null);
+  const [localSeatKey, setLocalSeatKey] = React.useState('us');
+  const [localGameState, setLocalGameState] = React.useState(null);
   const seenAnnouncementsRef = React.useRef(new Set());
   const seenRevealKeysRef = React.useRef(new Set());
   const channelRef = React.useRef(null);
@@ -1091,7 +1216,11 @@ function App() {
         setMemberships(data.memberships);
 
         const currentSelectedId = selectedGameIdRef.current;
-        if (currentSelectedId && !data.games.some((game) => game.id === currentSelectedId)) {
+        if (
+          currentSelectedId &&
+          currentSelectedId !== LOCAL_GAME_ID &&
+          !data.games.some((game) => game.id === currentSelectedId)
+        ) {
           setSelectedGameId(data.games[0]?.id ?? '');
         }
 
@@ -1119,10 +1248,45 @@ function App() {
     selectedGameIdRef.current = selectedGameId;
   }, [selectedGameId]);
 
-  const activeGame = games.find((game) => game.id === selectedGameId) ?? null;
-  const activeMembership = memberships.find((membership) => membership.game_id === selectedGameId) ?? null;
+  const localGame = React.useMemo(() => {
+    if (!localGameState) {
+      return null;
+    }
+
+    const seatName =
+      powerOptions.find((power) => power.id === localGameState.humanPowerKey)?.name ?? localGameState.humanPowerKey;
+    return {
+      id: LOCAL_GAME_ID,
+      name: `Local vs robots / ${seatName}`,
+      status: localGameState.status,
+      join_code: LOCAL_JOIN_CODE,
+      round: localGameState.round,
+      phase: localGameState.phase,
+      current_turn_index: localGameState.currentTurnIndex,
+      winner_power_key: localGameState.winnerPowerKey,
+      engineState: localGameState.engineState,
+      created_by: session?.user?.id ?? 'local',
+      isLocal: true,
+    };
+  }, [localGameState, session?.user?.id]);
+  const listedGames = localGame ? [localGame, ...games] : games;
+  const listedMemberships = localGame
+    ? [
+        {
+          game_id: LOCAL_GAME_ID,
+          power_key: localGameState.humanPowerKey,
+          membership_role: 'player',
+        },
+        ...memberships,
+      ]
+    : memberships;
+  const activeGame = listedGames.find((game) => game.id === selectedGameId) ?? null;
+  const isLocalGame = activeGame?.id === LOCAL_GAME_ID;
+  const activeMembership = listedMemberships.find((membership) => membership.game_id === selectedGameId) ?? null;
   const isAdmin = profile?.app_role === 'admin';
-  const canManageGame = Boolean(isAdmin || (activeGame && session?.user && activeGame.created_by === session.user.id));
+  const canManageGame = Boolean(
+    isLocalGame || isAdmin || (activeGame && session?.user && activeGame.created_by === session.user.id),
+  );
 
   React.useEffect(() => {
     if (!session?.user) {
@@ -1161,7 +1325,7 @@ function App() {
   }, [session?.user]);
 
   React.useEffect(() => {
-    if (!session?.user || !activeGame) {
+    if (!session?.user || !activeGame || isLocalGame) {
       return undefined;
     }
 
@@ -1170,10 +1334,10 @@ function App() {
     }, 1000);
 
     return () => window.clearInterval(intervalId);
-  }, [activeGame, session?.user]);
+  }, [activeGame, isLocalGame, session?.user]);
 
   React.useEffect(() => {
-    if (!supabase || !session?.user || !activeGame?.id) {
+    if (!supabase || !session?.user || !activeGame?.id || isLocalGame) {
       return undefined;
     }
 
@@ -1231,12 +1395,19 @@ function App() {
       channelRef.current = null;
       supabase.removeChannel(channel);
     };
-  }, [activeGame?.id, session?.user]);
+  }, [activeGame?.id, isLocalGame, session?.user]);
 
   React.useEffect(() => {
     if (!session?.user || !activeGame) {
       setGameState(null);
       setActivePowerKey('');
+      return;
+    }
+
+    if (isLocalGame) {
+      setGameState(localGameState);
+      setActivePowerKey(localGameState?.humanPowerKey ?? '');
+      setStatusMessage('Loaded local robot match.');
       return;
     }
 
@@ -1293,7 +1464,17 @@ function App() {
     return () => {
       isMounted = false;
     };
-  }, [activeGame, activeMembership?.power_key, activePowerKey, boardRefreshTick, canManageGame, isAdmin, session?.user]);
+  }, [
+    activeGame,
+    activeMembership?.power_key,
+    activePowerKey,
+    boardRefreshTick,
+    canManageGame,
+    isAdmin,
+    isLocalGame,
+    localGameState,
+    session?.user,
+  ]);
 
   const boardPlayers = gameState?.players ?? [];
   const liveGameStatus = gameState?.status ?? activeGame?.status ?? 'active';
@@ -1411,12 +1592,14 @@ function App() {
   const takenPowerKeys = new Set(
     joinedPlayers.map((member) => member.power_key).filter(Boolean),
   );
-  const availableSeats = boardPlayers.filter(
-    (player) => !takenPowerKeys.has(player.power_key) || player.power_key === activeMembership?.power_key,
-  );
+  const availableSeats = isLocalGame
+    ? boardPlayers
+    : boardPlayers.filter(
+        (player) => !takenPowerKeys.has(player.power_key) || player.power_key === activeMembership?.power_key,
+      );
   const openSeatCount = boardPlayers.length - joinedPlayers.length;
-  const activeGames = games.filter((game) => game.status === 'active');
-  const pastGames = games.filter((game) => game.status !== 'active');
+  const activeGames = listedGames.filter((game) => game.status === 'active');
+  const pastGames = listedGames.filter((game) => game.status !== 'active');
   const canEditSeatAction = Boolean(
     activePlayer &&
       currentPhase === 'choose_actions' &&
@@ -1442,6 +1625,97 @@ function App() {
     objectiveEligible,
   );
   const currentEventEffects = React.useMemo(() => getEventEffectSummaries(currentEvent), [currentEvent]);
+  const commitLocalState = React.useCallback((nextState) => {
+    setLocalGameState(nextState);
+    setGameState(nextState);
+  }, []);
+
+  React.useEffect(() => {
+    if (!isLocalGame || !gameState?.managerState || !activePowerKey || actionLoading) {
+      return;
+    }
+
+    if (currentPhase === 'choose_actions') {
+      let changed = false;
+      const nextManagerState = { ...gameState.managerState };
+      const nextEventReadySelections = { ...((gameState.engineState ?? {}).eventReadySelections ?? {}) };
+
+      for (const powerKey of turnOrder) {
+        if (powerKey === activePowerKey || nextManagerState[powerKey]?.selectedCardKey) {
+          continue;
+        }
+
+        const hand = nextManagerState[powerKey]?.hand ?? [];
+        if (!hand.length) {
+          continue;
+        }
+
+        const chosenCard = chooseRandom(hand);
+        const cardDefinition = getActionCard(chosenCard.definitionKey ?? getBaseCardKey(chosenCard.cardKey));
+        const payload = sanitizeSelectionPayload(
+          cardDefinition,
+          buildRandomSelectionPayload(cardDefinition, powerKey),
+          powerKey,
+        );
+
+        nextManagerState[powerKey] = {
+          ...nextManagerState[powerKey],
+          selectedAction: chosenCard.name,
+          selectedCardKey: chosenCard.cardKey,
+          selectedActionPayload: payload,
+          declaredVictory: false,
+        };
+        nextEventReadySelections[powerKey] = chosenCard.cardKey;
+        changed = true;
+      }
+
+      if (changed) {
+        commitLocalState({
+          ...gameState,
+          managerState: nextManagerState,
+          engineState: {
+            ...(gameState.engineState ?? {}),
+            eventReadySelections: nextEventReadySelections,
+          },
+        });
+      }
+      return;
+    }
+
+    if (currentPhase === 'victory_check') {
+      let changed = false;
+      const nextManagerState = { ...gameState.managerState };
+
+      for (const powerKey of turnOrder) {
+        if (powerKey === activePowerKey) {
+          continue;
+        }
+
+        const declaredVictory = isObjectiveEligible(
+          gameState.players,
+          powerKey,
+          nextManagerState[powerKey]?.secretState,
+        );
+
+        if (nextManagerState[powerKey]?.declaredVictory === declaredVictory) {
+          continue;
+        }
+
+        nextManagerState[powerKey] = {
+          ...nextManagerState[powerKey],
+          declaredVictory,
+        };
+        changed = true;
+      }
+
+      if (changed) {
+        commitLocalState({
+          ...gameState,
+          managerState: nextManagerState,
+        });
+      }
+    }
+  }, [actionLoading, activePowerKey, commitLocalState, currentPhase, gameState, isLocalGame]);
 
   const selectedCardKeysByPower = React.useMemo(() => {
     const next = Object.fromEntries(
@@ -1663,6 +1937,19 @@ function App() {
     }
   }
 
+  function handleStartLocalGame(event) {
+    event.preventDefault();
+    const nextState = buildLocalGameState(localSeatKey);
+    setErrorMessage('');
+    setWaitingOnPlayers([]);
+    setHudPanel(null);
+    setToast(null);
+    commitLocalState(nextState);
+    setSelectedGameId(LOCAL_GAME_ID);
+    setActivePowerKey(localSeatKey);
+    setStatusMessage('Local robot match started.');
+  }
+
   async function handleCreateGame(event) {
     event.preventDefault();
 
@@ -1793,6 +2080,13 @@ function App() {
   }
 
   async function handleLeaveGame() {
+    if (isLocalGame) {
+      setSelectedGameId('');
+      setGameState(null);
+      setStatusMessage('Returned to the lobby.');
+      return;
+    }
+
     if (!activeGame || !activeMembership) {
       return;
     }
@@ -1825,6 +2119,50 @@ function App() {
 
   async function handleSelectAction(card) {
     if (!canEditSeatAction || !activePlayer) {
+      return;
+    }
+
+    if (isLocalGame) {
+      const cardDefinition = getActionCard(card.definitionKey ?? getBaseCardKey(card.cardKey));
+      const payload = sanitizeSelectionPayload(cardDefinition, cardDrafts[card.cardKey], activePowerKey);
+      const nextEngineState = {
+        ...(gameState.engineState ?? {}),
+        eventReadySelections: {
+          ...((gameState.engineState ?? {}).eventReadySelections ?? {}),
+          [activePowerKey]: card.cardKey,
+        },
+      };
+
+      commitLocalState({
+        ...gameState,
+        engineState: nextEngineState,
+        managerState: {
+          ...gameState.managerState,
+          [activePowerKey]: {
+            ...gameState.managerState[activePowerKey],
+            selectedAction: card.name,
+            selectedCardKey: card.cardKey,
+            selectedActionPayload: payload,
+            declaredVictory: false,
+          },
+        },
+      });
+      setPrivateState((current) => ({
+        ...current,
+        selectedAction: card.name,
+        selectedCardKey: card.cardKey,
+        selectedActionPayload: payload,
+        declaredVictory: false,
+      }));
+      setStatusMessage(`Locked ${card.name} for ${activePlayer.name}.`);
+      setToast({
+        title: 'Action locked',
+        body: 'Your card is face-down and the robots are committing theirs.',
+        meta: 'The round will advance once every seat is locked.',
+        durationMs: 1800,
+        tone: 'card-lock',
+      });
+      setHudPanel(null);
       return;
     }
 
@@ -1903,6 +2241,22 @@ function App() {
       return;
     }
 
+    if (isLocalGame) {
+      commitLocalState({
+        ...gameState,
+        managerState: {
+          ...gameState.managerState,
+          [activePowerKey]: {
+            ...gameState.managerState[activePowerKey],
+            declaredVictory: declared,
+          },
+        },
+      });
+      setPrivateState((current) => ({ ...current, declaredVictory: declared }));
+      setStatusMessage(declared ? 'Victory attempt declared.' : 'Victory attempt withdrawn.');
+      return;
+    }
+
     try {
       setActionLoading(true);
       setErrorMessage('');
@@ -1941,6 +2295,67 @@ function App() {
 
   async function handleAdvanceFlow() {
     if (!canManageGame || !activeGame || !gameState?.players?.length || !gameState?.managerState) {
+      return;
+    }
+
+    if (isLocalGame) {
+      const nextState = advanceGameState({
+        players: gameState.players,
+        managerState: gameState.managerState,
+        phase: currentPhase,
+        round: gameState.round,
+        currentTurnIndex: currentPhase === 'resolve_actions' ? nextResolveIndex : gameState.currentTurnIndex ?? 0,
+        engineState: gameState.engineState ?? {},
+      });
+
+      if (nextState.blocked?.length) {
+        const missingPlayers = nextState.blocked
+          .map((powerKey) => boardPlayers.find((player) => player.power_key === powerKey))
+          .filter(Boolean);
+        setWaitingOnPlayers(missingPlayers);
+        setStatusMessage(
+          `Waiting on action choices from ${missingPlayers.map((player) => player.name).join(', ')}.`,
+        );
+        return;
+      }
+
+      if (currentPhase === 'victory_check') {
+        nextState.engineState = { ...nextState.engineState, victoryReadySelections: {} };
+      }
+
+      commitLocalState(nextState);
+
+      if (activePowerKey && nextState.managerState?.[activePowerKey]) {
+        const managedSeat = nextState.managerState[activePowerKey];
+        setPrivateState({
+          objective: managedSeat.objective ?? '',
+          selectedAction: managedSeat.selectedAction ?? '',
+          selectedCardKey: managedSeat.selectedCardKey ?? '',
+          selectedActionPayload: managedSeat.selectedActionPayload ?? {},
+          declaredVictory: Boolean(managedSeat.declaredVictory),
+          secretState: managedSeat.secretState ?? {},
+          cards: managedSeat.hand ?? [],
+        });
+      }
+
+      setStatusMessage(nextState.statusMessage);
+      if (currentPhase === 'resolve_actions') {
+        const actingPowerKey = gameState.engineState?.actionOrder?.[nextResolveIndex] ?? currentTurnPowerKey;
+        const actingPlayerLabel =
+          boardPlayers.find((player) => player.power_key === actingPowerKey)?.name ?? 'A player';
+        const revealedAction = nextState.engineState?.revealedActions?.[actingPowerKey];
+        setToast({
+          title: `${actingPlayerLabel} resolved`,
+          body: `${revealedAction?.cardName ?? 'Action'}: ${revealedAction?.outcome ?? nextState.statusMessage}`,
+          durationMs: 2200,
+        });
+      } else if (currentPhase === 'victory_check' && !nextState.winnerPowerKey) {
+        setToast({
+          title: 'No victory this round',
+          body: `Round ${nextState.round} begins in a moment.`,
+          durationMs: 1800,
+        });
+      }
       return;
     }
 
@@ -2051,6 +2466,28 @@ function App() {
 
   async function handleSignalVictoryReady() {
     if (!activeGame || !gameState || !activePowerKey || currentPhase !== 'victory_check') {
+      return;
+    }
+
+    if (isLocalGame) {
+      const nextEngineState = {
+        ...(gameState.engineState ?? {}),
+        victoryReadySelections: {
+          ...((gameState.engineState ?? {}).victoryReadySelections ?? {}),
+          [activePowerKey]: true,
+        },
+      };
+
+      commitLocalState({
+        ...gameState,
+        engineState: nextEngineState,
+      });
+      setStatusMessage(`Ready to advance. ${victoryReadySeatCount + 1}/${turnOrder.length} players ready.`);
+      setToast({
+        title: 'You are ready',
+        body: `Waiting on ${turnOrder.length - (victoryReadySeatCount + 1)} more player(s) to advance.`,
+        durationMs: 1800,
+      });
       return;
     }
 
@@ -2233,7 +2670,11 @@ function App() {
                     <button type="button" className="ghost" onClick={() => setSelectedGameId('')}>
                       Back to lobby
                     </button>
-                    {activeMembership ? (
+                    {isLocalGame ? (
+                      <button type="button" className="ghost" onClick={handleStartLocalGame}>
+                        Restart robots
+                      </button>
+                    ) : activeMembership ? (
                       <button type="button" className="ghost" onClick={handleLeaveGame} disabled={actionLoading}>
                         Leave game
                       </button>
@@ -2573,7 +3014,7 @@ function App() {
                           </button>
                         ))}
                       </div>
-                      {!isAdmin && liveGameStatus === 'active' ? (
+                      {!isAdmin && !isLocalGame && liveGameStatus === 'active' ? (
                         <div className="seat-actions">
                           <p className="mini-label">Claim or change your seat</p>
                           <div className="seat-list">
@@ -2854,6 +3295,30 @@ function App() {
                     {actionLoading ? 'Working...' : 'Join game'}
                   </button>
                 </form>
+
+                <form className="form-panel" onSubmit={handleStartLocalGame}>
+                  <label className="form-label" htmlFor="local-seat">
+                    Human seat
+                  </label>
+                  <select
+                    id="local-seat"
+                    className="input-control"
+                    value={localSeatKey}
+                    onChange={(event) => setLocalSeatKey(event.target.value)}
+                  >
+                    {powerOptions.map((power) => (
+                      <option key={power.id} value={power.id}>
+                        {power.shortName} / {power.name}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mini-label">
+                    Starts an in-browser match where every other seat is controlled by a robot that chooses random legal actions.
+                  </p>
+                  <button type="submit">
+                    {selectedGameId === LOCAL_GAME_ID ? 'Restart robot match' : 'Play vs robots'}
+                  </button>
+                </form>
               </aside>
 
               <section className="board-panel board-panel-wide">
@@ -2861,7 +3326,7 @@ function App() {
                   <GameList
                     title="Active games"
                     games={activeGames}
-                    memberships={memberships}
+                    memberships={listedMemberships}
                     selectedGameId={selectedGameId}
                     onSelect={setSelectedGameId}
                     emptyMessage="No active games yet."
@@ -2869,7 +3334,7 @@ function App() {
                   <GameList
                     title="Past games you played"
                     games={pastGames}
-                    memberships={memberships}
+                    memberships={listedMemberships}
                     selectedGameId={selectedGameId}
                     onSelect={setSelectedGameId}
                     emptyMessage="Finished games will appear here."
