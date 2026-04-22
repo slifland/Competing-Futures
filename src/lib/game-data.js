@@ -1,4 +1,4 @@
-export const RULES_VERSION = '2026-04-15-doc-rules-v1';
+export const RULES_VERSION = '2026-04-22-doc-rules-v2';
 
 export const turnOrder = ['us', 'china', 'lab-a', 'lab-b', 'model'];
 
@@ -1091,11 +1091,11 @@ const actionDecks = {
       formula: { base: 10, difficulty: 1.2, terms: [{ track: 'resources', weight: 1 }] },
       selection: { kind: 'target', options: ['lab-a', 'lab-b'] },
       summary:
-        'Success: self +2 Capabilities, -2 Resources, -1 Public Support; target lab +1 Resources and +1 Capabilities. Fail: self -1 Resources.',
+        'Success: self +2 Capabilities, -2 Resources, -1 Public Support, +1 Safety; target lab +1 Resources and +1 Capabilities. Fail: self -1 Resources.',
       buildOutcome() {
         return {
           success: [
-            { target: 'self', deltas: { capabilities: 2, resources: -2, publicSupport: -1 } },
+            { target: 'self', deltas: { capabilities: 2, resources: -2, publicSupport: -1, safety: 1 } },
             { target: 'target', deltas: { resources: 1, capabilities: 1 } },
           ],
           failure: [{ target: 'self', deltas: { resources: -1 } }],
@@ -2686,6 +2686,10 @@ export function advanceGameState({ players, managerState, phase, round, currentT
 
     if (event?.key === 'singularity') {
       nextEngineState.singularityRound = round;
+      nextEngineState.publicLog = [
+        ...nextEngineState.publicLog,
+        `Round ${round}: Singularity triggered a two-round takeoff countdown.`,
+      ].slice(-8);
       const assigned = assignPathDependentIfNeeded(
         nextPlayers,
         nextManagerState,
@@ -2806,7 +2810,10 @@ export function advanceGameState({ players, managerState, phase, round, currentT
       };
     }
 
-    if (round >= 10 || nextEngineState.singularityRound === round) {
+    const singularityCountdownComplete =
+      Number.isInteger(nextEngineState.singularityRound) && round >= nextEngineState.singularityRound + 2;
+
+    if (round >= 10 || singularityCountdownComplete) {
       winnerPowerKey = compareByTiebreaker(nextPlayers, turnOrder);
       status = 'completed';
       nextEngineState = {
