@@ -365,6 +365,21 @@ export async function initializeGameFromRules(gameId) {
   });
 }
 
+function serializePlayersForPersistence(players) {
+  return players.map((player) => ({
+    id: player.id,
+    name: player.name,
+    short_name: player.short_name ?? player.shortName,
+    accent: player.accent,
+    role: player.role,
+    home_class: player.home_class ?? player.homeClass,
+    capabilities: player.meters.capabilities,
+    safety: player.meters.safety,
+    market: player.meters.resources,
+    support: player.meters.publicSupport,
+  }));
+}
+
 export async function updateTurnSelection(playerId, selectedCardKey, selectedAction, selectedActionPayload) {
   const client = getSupabaseClient();
   const rpcResult = await client.rpc('update_turn_selection', {
@@ -387,6 +402,27 @@ export async function updateTurnSelection(playerId, selectedCardKey, selectedAct
   throw rpcResult.error;
 }
 
+export async function lockTurnSelection(playerId, selectedCardKey, selectedAction, selectedActionPayload) {
+  const client = getSupabaseClient();
+  const rpcResult = await client.rpc('lock_turn_selection', {
+    target_player_id_input: playerId,
+    selected_card_key_input: selectedCardKey,
+    selected_action_input: selectedAction,
+    selected_action_payload_input: selectedActionPayload ?? {},
+  });
+
+  if (!rpcResult.error) {
+    return;
+  }
+
+  if (rpcResult.error.message?.includes('lock_turn_selection') && rpcResult.error.message?.includes('does not exist')) {
+    await updateTurnSelection(playerId, selectedCardKey, selectedAction, selectedActionPayload);
+    return;
+  }
+
+  throw rpcResult.error;
+}
+
 export async function setVictoryDeclaration(playerId, declaredVictory) {
   const client = getSupabaseClient();
   const rpcResult = await client.rpc('set_victory_declaration', {
@@ -401,6 +437,25 @@ export async function setVictoryDeclaration(playerId, declaredVictory) {
   if (isMissingVictoryDeclarationRpcError(rpcResult.error)) {
     throw new Error(
       'The victory-declaration RPC is missing in Supabase. Run supabase/migrations/20260415_rules_engine_refresh.sql and refresh.',
+    );
+  }
+
+  throw rpcResult.error;
+}
+
+export async function signalVictoryReady(playerId) {
+  const client = getSupabaseClient();
+  const rpcResult = await client.rpc('signal_victory_ready', {
+    target_player_id_input: playerId,
+  });
+
+  if (!rpcResult.error) {
+    return;
+  }
+
+  if (rpcResult.error.message?.includes('signal_victory_ready') && rpcResult.error.message?.includes('does not exist')) {
+    throw new Error(
+      'The victory-ready RPC is missing in Supabase. Run the latest migration and refresh.',
     );
   }
 
@@ -482,60 +537,31 @@ export async function deleteGame(gameId) {
 
 export async function persistGameState({ gameId, gameUpdate, players, managerState }) {
   const client = getSupabaseClient();
-  const { error: gameError } = await client.from('games').update(gameUpdate).eq('id', gameId);
+  const serialized = managerState ? serializeManagerState(managerState) : { privateStates: [], handRows: [] };
+  const rpcResult = await withTimeout(
+    client.rpc('persist_game_state_atomic', {
+      target_game_id_input: gameId,
+      game_update_input: gameUpdate ?? {},
+      players_input: serializePlayersForPersistence(players ?? []),
+      private_states_input: serialized.privateStates,
+      hand_rows_input: serialized.handRows,
+    }),
+    DEFAULT_RPC_TIMEOUT_MS,
+    'persist_game_state_atomic',
+  );
 
-  if (gameError) {
-    throw getGameFlowSetupError(gameError);
-  }
-
-  for (const player of players) {
-    const { error: playerError } = await client
-      .from('players')
-      .update({
-        name: player.name,
-        short_name: player.short_name ?? player.shortName,
-        accent: player.accent,
-        role: player.role,
-        home_class: player.home_class ?? player.homeClass,
-        capabilities: player.meters.capabilities,
-        safety: player.meters.safety,
-        market: player.meters.resources,
-        support: player.meters.publicSupport,
-      })
-      .eq('id', player.id);
-
-    if (playerError) {
-      throw getSchemaSetupError(playerError);
-    }
-  }
-
-  if (!managerState) {
+  if (!rpcResult.error) {
     return;
   }
 
-  const serialized = serializeManagerState(managerState);
-
-  const { error: privateStateError } = await client
-    .from('player_private_state')
-    .upsert(serialized.privateStates, { onConflict: 'player_id' });
-
-  if (privateStateError) {
-    throw getSchemaSetupError(privateStateError);
+  if (
+    rpcResult.error.message?.includes('persist_game_state_atomic') &&
+    rpcResult.error.message?.includes('does not exist')
+  ) {
+    throw new Error('The atomic game-state RPC is missing in Supabase. Run the latest migration and refresh.');
   }
 
-  const { error: deleteCardsError } = await client.from('player_cards').delete().like('player_id', `${gameId}-%`);
-
-  if (deleteCardsError) {
-    throw getSchemaSetupError(deleteCardsError);
-  }
-
-  if (serialized.handRows.length) {
-    const { error: insertCardsError } = await client.from('player_cards').insert(serialized.handRows);
-
-    if (insertCardsError) {
-      throw getSchemaSetupError(insertCardsError);
-    }
-  }
+  throw getGameFlowSetupError(rpcResult.error);
 }
 
 export function gameNeedsRulesInitialization(activeGame) {

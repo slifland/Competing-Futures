@@ -26,12 +26,12 @@ import {
   initializeGameFromRules,
   joinGameByCode,
   leaveGame,
+  lockTurnSelection,
   persistGameState,
   resetProfileCache,
   setVictoryDeclaration,
-  updateGameFlow,
+  signalVictoryReady,
   updateGameStatus,
-  updateTurnSelection,
 } from './lib/game-api.js';
 import worldMap from './assets/world-map-base.webp';
 
@@ -1096,6 +1096,7 @@ function App() {
   });
   const [refreshKey, setRefreshKey] = React.useState(0);
   const [boardRefreshTick, setBoardRefreshTick] = React.useState(0);
+  const [privateSeatRefreshTick, setPrivateSeatRefreshTick] = React.useState(0);
   const [gameState, setGameState] = React.useState(null);
   const [waitingOnPlayers, setWaitingOnPlayers] = React.useState([]);
   const [activePowerKey, setActivePowerKey] = React.useState('');
@@ -1116,6 +1117,11 @@ function App() {
   const channelRef = React.useRef(null);
   const autoAdvanceKeyRef = React.useRef('');
   const selectedGameIdRef = React.useRef('');
+  const accountRequestIdRef = React.useRef(0);
+  const boardRequestIdRef = React.useRef(0);
+  const privateSeatRequestIdRef = React.useRef(0);
+  const lobbyRefreshTimerRef = React.useRef(null);
+  const boardRefreshTimerRef = React.useRef(null);
   const [walkthroughDismissed, setWalkthroughDismissed] = React.useState(() => {
     if (typeof window === 'undefined') {
       return false;
@@ -1202,12 +1208,15 @@ function App() {
     let isMounted = true;
 
     async function loadAccount() {
+      const requestId = accountRequestIdRef.current + 1;
+      accountRequestIdRef.current = requestId;
+
       try {
         setStatusMessage('Loading your account, games, and memberships...');
         setErrorMessage('');
         const data = await fetchAccountContext(session.user);
 
-        if (!isMounted) {
+        if (!isMounted || requestId !== accountRequestIdRef.current) {
           return;
         }
 
@@ -1228,7 +1237,7 @@ function App() {
           setStatusMessage('No games yet. Create one or join with a code.');
         }
       } catch (error) {
-        if (!isMounted) {
+        if (!isMounted || requestId !== accountRequestIdRef.current) {
           return;
         }
 
@@ -1247,6 +1256,39 @@ function App() {
   React.useEffect(() => {
     selectedGameIdRef.current = selectedGameId;
   }, [selectedGameId]);
+
+  const scheduleLobbyRefresh = React.useCallback(() => {
+    if (lobbyRefreshTimerRef.current) {
+      return;
+    }
+
+    lobbyRefreshTimerRef.current = window.setTimeout(() => {
+      lobbyRefreshTimerRef.current = null;
+      setRefreshKey((current) => current + 1);
+    }, 200);
+  }, []);
+
+  const scheduleBoardRefresh = React.useCallback(() => {
+    if (boardRefreshTimerRef.current) {
+      return;
+    }
+
+    boardRefreshTimerRef.current = window.setTimeout(() => {
+      boardRefreshTimerRef.current = null;
+      setBoardRefreshTick((current) => current + 1);
+    }, 150);
+  }, []);
+
+  React.useEffect(() => {
+    return () => {
+      if (lobbyRefreshTimerRef.current) {
+        window.clearTimeout(lobbyRefreshTimerRef.current);
+      }
+      if (boardRefreshTimerRef.current) {
+        window.clearTimeout(boardRefreshTimerRef.current);
+      }
+    };
+  }, []);
 
   const localGame = React.useMemo(() => {
     if (!localGameState) {
@@ -1295,7 +1337,7 @@ function App() {
 
     const intervalId = window.setInterval(() => {
       setRefreshKey((current) => current + 1);
-    }, 3000);
+    }, 15000);
 
     return () => window.clearInterval(intervalId);
   }, [session?.user]);
@@ -1310,19 +1352,19 @@ function App() {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'games' },
-        () => setRefreshKey((current) => current + 1),
+        scheduleLobbyRefresh,
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'game_memberships' },
-        () => setRefreshKey((current) => current + 1),
+        scheduleLobbyRefresh,
       )
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [session?.user]);
+  }, [scheduleLobbyRefresh, session?.user]);
 
   React.useEffect(() => {
     if (!session?.user || !activeGame || isLocalGame) {
@@ -1331,7 +1373,7 @@ function App() {
 
     const intervalId = window.setInterval(() => {
       setBoardRefreshTick((current) => current + 1);
-    }, 1000);
+    }, 15000);
 
     return () => window.clearInterval(intervalId);
   }, [activeGame, isLocalGame, session?.user]);
@@ -1347,21 +1389,21 @@ function App() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'games', filter: `id=eq.${activeGame.id}` },
         () => {
-          setBoardRefreshTick((current) => current + 1);
-          setRefreshKey((current) => current + 1);
+          scheduleBoardRefresh();
+          scheduleLobbyRefresh();
         },
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'players', filter: `game_id=eq.${activeGame.id}` },
-        () => setBoardRefreshTick((current) => current + 1),
+        scheduleBoardRefresh,
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'game_memberships', filter: `game_id=eq.${activeGame.id}` },
         () => {
-          setBoardRefreshTick((current) => current + 1);
-          setRefreshKey((current) => current + 1);
+          scheduleBoardRefresh();
+          scheduleLobbyRefresh();
         },
       )
       .on(
@@ -1370,7 +1412,10 @@ function App() {
         (payload) => {
           const pid = payload.new?.player_id ?? payload.old?.player_id;
           if (pid && pid.startsWith(`${activeGame.id}-`)) {
-            setBoardRefreshTick((current) => current + 1);
+            scheduleBoardRefresh();
+            if (activeMembership?.power_key && pid.endsWith(`-${activeMembership.power_key}`)) {
+              setPrivateSeatRefreshTick((current) => current + 1);
+            }
           }
         },
       )
@@ -1380,7 +1425,10 @@ function App() {
         (payload) => {
           const pid = payload.new?.player_id ?? payload.old?.player_id;
           if (pid && pid.startsWith(`${activeGame.id}-`)) {
-            setBoardRefreshTick((current) => current + 1);
+            scheduleBoardRefresh();
+            if (activeMembership?.power_key && pid.endsWith(`-${activeMembership.power_key}`)) {
+              setPrivateSeatRefreshTick((current) => current + 1);
+            }
           }
         },
       )
@@ -1395,7 +1443,7 @@ function App() {
       channelRef.current = null;
       supabase.removeChannel(channel);
     };
-  }, [activeGame?.id, isLocalGame, session?.user]);
+  }, [activeGame?.id, activeMembership?.power_key, isLocalGame, scheduleBoardRefresh, scheduleLobbyRefresh, session?.user]);
 
   React.useEffect(() => {
     if (!session?.user || !activeGame) {
@@ -1414,21 +1462,25 @@ function App() {
     let isMounted = true;
 
     async function loadGame() {
+      const requestId = boardRequestIdRef.current + 1;
+      boardRequestIdRef.current = requestId;
+
       try {
         setStatusMessage(`Loading ${activeGame.name}...`);
 
         if (canManageGame && gameNeedsRulesInitialization(activeGame)) {
           setStatusMessage(`Reinitializing ${activeGame.name} with the Google Doc rules...`);
           await initializeGameFromRules(activeGame.id);
-          if (isMounted) {
-            setRefreshKey((current) => current + 1);
+          if (isMounted && requestId === boardRequestIdRef.current) {
+            scheduleLobbyRefresh();
+            scheduleBoardRefresh();
           }
           return;
         }
 
         const board = await fetchGameBoard(activeGame.id, { includePrivateState: canManageGame });
 
-        if (!isMounted) {
+        if (!isMounted || requestId !== boardRequestIdRef.current) {
           return;
         }
 
@@ -1451,7 +1503,7 @@ function App() {
         setActivePowerKey(nextPowerKey);
         setStatusMessage(`Loaded ${activeGame.name}.`);
       } catch (error) {
-        if (!isMounted) {
+        if (!isMounted || requestId !== boardRequestIdRef.current) {
           return;
         }
 
@@ -1467,12 +1519,13 @@ function App() {
   }, [
     activeGame,
     activeMembership?.power_key,
-    activePowerKey,
     boardRefreshTick,
     canManageGame,
     isAdmin,
     isLocalGame,
     localGameState,
+    scheduleBoardRefresh,
+    scheduleLobbyRefresh,
     session?.user,
   ]);
 
@@ -1480,6 +1533,7 @@ function App() {
   const liveGameStatus = gameState?.status ?? activeGame?.status ?? 'active';
   const liveJoinCode = gameState?.joinCode ?? activeGame?.join_code ?? '';
   const activePlayer = boardPlayers.find((player) => player.power_key === activePowerKey) ?? null;
+  const managedSeat = canManageGame && activePowerKey ? gameState?.managerState?.[activePowerKey] ?? null : null;
 
   React.useEffect(() => {
     if (!session?.user || !gameState || !activePowerKey) {
@@ -1487,8 +1541,7 @@ function App() {
       return;
     }
 
-    if (canManageGame && gameState.managerState?.[activePowerKey]) {
-      const managedSeat = gameState.managerState[activePowerKey];
+    if (managedSeat) {
       setPrivateState({
         objective: managedSeat.objective ?? '',
         selectedAction: managedSeat.selectedAction ?? '',
@@ -1508,16 +1561,19 @@ function App() {
     let isMounted = true;
 
     async function loadPrivateSeatData() {
+      const requestId = privateSeatRequestIdRef.current + 1;
+      privateSeatRequestIdRef.current = requestId;
+
       try {
         const data = await fetchPrivateSeat(activePlayer.id);
 
-        if (!isMounted) {
+        if (!isMounted || requestId !== privateSeatRequestIdRef.current) {
           return;
         }
 
         setPrivateState(data);
       } catch (error) {
-        if (!isMounted) {
+        if (!isMounted || requestId !== privateSeatRequestIdRef.current) {
           return;
         }
 
@@ -1531,7 +1587,7 @@ function App() {
     return () => {
       isMounted = false;
     };
-  }, [activePlayer?.id, activePowerKey, canManageGame, gameState, session?.user]);
+  }, [activePlayer?.id, activePowerKey, managedSeat, privateSeatRefreshTick, session?.user]);
 
   React.useEffect(() => {
     if (!activePowerKey || !privateState.cards.length) {
@@ -2171,8 +2227,6 @@ function App() {
       setErrorMessage('');
       const cardDefinition = getActionCard(card.definitionKey ?? getBaseCardKey(card.cardKey));
       const payload = sanitizeSelectionPayload(cardDefinition, cardDrafts[card.cardKey], activePowerKey);
-      await updateTurnSelection(activePlayer.id, card.cardKey, card.name, payload);
-
       const nextEngineState = {
         ...(gameState.engineState ?? {}),
         eventReadySelections: {
@@ -2180,15 +2234,7 @@ function App() {
           [activePowerKey]: card.cardKey,
         },
       };
-
-      await updateGameFlow(activeGame.id, {
-        round: gameState.round,
-        phase: gameState.phase,
-        current_turn_index: gameState.currentTurnIndex ?? 0,
-        status: gameState.status,
-        winner_power_key: gameState.winnerPowerKey,
-        engine_state: nextEngineState,
-      });
+      await lockTurnSelection(activePlayer.id, card.cardKey, card.name, payload);
 
       setPrivateState((current) => ({
         ...current,
@@ -2501,15 +2547,7 @@ function App() {
           [activePowerKey]: true,
         },
       };
-
-      await updateGameFlow(activeGame.id, {
-        round: gameState.round,
-        phase: gameState.phase,
-        current_turn_index: gameState.currentTurnIndex ?? 0,
-        status: gameState.status,
-        winner_power_key: gameState.winnerPowerKey,
-        engine_state: nextEngineState,
-      });
+      await signalVictoryReady(activePlayer.id);
 
       setGameState((current) =>
         current
