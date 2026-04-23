@@ -1,0 +1,1630 @@
+{
+  "generatedAt": "2026-04-23T18:32:03.346Z",
+  "simulations": 10000,
+  "winners": {
+    "us": 1207,
+    "china": 325,
+    "lab-a": 2828,
+    "lab-b": 3144,
+    "model": 2496
+  },
+  "winnerRates": {
+    "us": 0.1207,
+    "china": 0.0325,
+    "lab-a": 0.2828,
+    "lab-b": 0.3144,
+    "model": 0.2496
+  },
+  "roundsHistogram": {
+    "1": 4,
+    "2": 13,
+    "3": 742,
+    "4": 847,
+    "5": 847,
+    "6": 965,
+    "7": 1001,
+    "8": 990,
+    "9": 948,
+    "10": 3643
+  },
+  "singularityEndings": 6277,
+  "events": {
+    "singularity": {
+      "title": "Singularity",
+      "occurrences": 6277,
+      "cumulativeImpact": {
+        "capabilities": 38158,
+        "resources": 0,
+        "safety": -66619,
+        "publicSupport": 0
+      }
+    },
+    "ubi-implemented": {
+      "title": "UBI Is Implemented in a Top 25 GDP Country",
+      "occurrences": 5171,
+      "cumulativeImpact": {
+        "capabilities": 0,
+        "resources": -13974,
+        "safety": 0,
+        "publicSupport": 5636
+      }
+    },
+    "cyber-attack": {
+      "title": "Large-Scale AI Cyber Attack",
+      "occurrences": 6727,
+      "cumulativeImpact": {
+        "capabilities": -6044,
+        "resources": 0,
+        "safety": 0,
+        "publicSupport": -27689
+      }
+    },
+    "autonomous-weapons-ban": {
+      "title": "UN Bans Fully Autonomous Weapons",
+      "occurrences": 5395,
+      "cumulativeImpact": {
+        "capabilities": -10571,
+        "resources": 0,
+        "safety": 0,
+        "publicSupport": 15857
+      }
+    },
+    "major-disease-cure": {
+      "title": "A Treatment or Cure Is Found for a Major Disease",
+      "occurrences": 6008,
+      "cumulativeImpact": {
+        "capabilities": 0,
+        "resources": 0,
+        "safety": 0,
+        "publicSupport": 29538
+      }
+    },
+    "pandemic-pathogen": {
+      "title": "AI-Developed Pandemic Pathogen",
+      "occurrences": 5273,
+      "cumulativeImpact": {
+        "capabilities": 0,
+        "resources": -6766,
+        "safety": 0,
+        "publicSupport": -19854
+      }
+    },
+    "china-steals-model-weights": {
+      "title": "China Steals Model Weights",
+      "occurrences": 6272,
+      "cumulativeImpact": {
+        "capabilities": 12122,
+        "resources": 0,
+        "safety": 0,
+        "publicSupport": -16325
+      }
+    },
+    "semiconductor-trade-war": {
+      "title": "Global Semiconductor Trade War Escalation",
+      "occurrences": 5439,
+      "cumulativeImpact": {
+        "capabilities": -5311,
+        "resources": -12005,
+        "safety": 0,
+        "publicSupport": 0
+      }
+    },
+    "china-invades-taiwan": {
+      "title": "China Invades Taiwan",
+      "occurrences": 5235,
+      "cumulativeImpact": {
+        "capabilities": 4818,
+        "resources": -18706,
+        "safety": 0,
+        "publicSupport": 0
+      }
+    },
+    "ai-whistleblower": {
+      "title": "American Whistleblower on AI Surveillance",
+      "occurrences": 6238,
+      "cumulativeImpact": {
+        "capabilities": 0,
+        "resources": 0,
+        "safety": 0,
+        "publicSupport": -20829
+      }
+    },
+    "labs-nationalized": {
+      "title": "US AI Labs Nationalized",
+      "occurrences": 5283,
+      "cumulativeImpact": {
+        "capabilities": -2159,
+        "resources": 0,
+        "safety": 0,
+        "publicSupport": 0
+      }
+    },
+    "deepfake-election-crisis": {
+      "title": "Deepfake Election Crisis",
+      "occurrences": 6344,
+      "cumulativeImpact": {
+        "capabilities": 5744,
+        "resources": 0,
+        "safety": 0,
+        "publicSupport": -16309
+      }
+    },
+    "agi-created": {
+      "title": "AGI Created",
+      "occurrences": 5896,
+      "cumulativeImpact": {
+        "capabilities": 46820,
+        "resources": 23508,
+        "safety": 0,
+        "publicSupport": 0
+      }
+    }
+  },
+  "cardDraws": {
+    "us": {
+      "us-espionage": {
+        "draws": 15842,
+        "byRound": {
+          "1": 5046,
+          "2": 1632,
+          "3": 1672,
+          "4": 1532,
+          "5": 1366,
+          "6": 1269,
+          "7": 1038,
+          "8": 937,
+          "9": 739,
+          "10": 611
+        }
+      },
+      "federal-investment": {
+        "draws": 26438,
+        "byRound": {
+          "1": 8203,
+          "2": 2798,
+          "3": 2753,
+          "4": 2568,
+          "5": 2291,
+          "6": 2123,
+          "7": 1869,
+          "8": 1543,
+          "9": 1243,
+          "10": 1047
+        }
+      },
+      "public-campaign-for-ai": {
+        "draws": 10564,
+        "byRound": {
+          "1": 3376,
+          "2": 1146,
+          "3": 1085,
+          "4": 1033,
+          "5": 935,
+          "6": 759,
+          "7": 713,
+          "8": 617,
+          "9": 503,
+          "10": 397
+        }
+      },
+      "ai-regulation": {
+        "draws": 16048,
+        "byRound": {
+          "1": 4991,
+          "2": 1742,
+          "3": 1638,
+          "4": 1553,
+          "5": 1380,
+          "6": 1319,
+          "7": 1091,
+          "8": 950,
+          "9": 785,
+          "10": 599
+        }
+      },
+      "chip-export-ban": {
+        "draws": 10448,
+        "byRound": {
+          "1": 3262,
+          "2": 1056,
+          "3": 1141,
+          "4": 997,
+          "5": 983,
+          "6": 811,
+          "7": 713,
+          "8": 606,
+          "9": 503,
+          "10": 376
+        }
+      },
+      "public-campaign-against-ai": {
+        "draws": 10772,
+        "byRound": {
+          "1": 3395,
+          "2": 1077,
+          "3": 1129,
+          "4": 1039,
+          "5": 926,
+          "6": 847,
+          "7": 764,
+          "8": 648,
+          "9": 545,
+          "10": 402
+        }
+      },
+      "international-ai-treaty": {
+        "draws": 5446,
+        "byRound": {
+          "1": 1727,
+          "2": 545,
+          "3": 565,
+          "4": 519,
+          "5": 513,
+          "6": 419,
+          "7": 394,
+          "8": 280,
+          "9": 273,
+          "10": 211
+        }
+      }
+    },
+    "china": {
+      "rare-earth-restrictions": {
+        "draws": 9618,
+        "byRound": {
+          "1": 3031,
+          "2": 972,
+          "3": 1059,
+          "4": 934,
+          "5": 867,
+          "6": 755,
+          "7": 640,
+          "8": 560,
+          "9": 456,
+          "10": 344
+        }
+      },
+      "forced-technology-transfer": {
+        "draws": 9548,
+        "byRound": {
+          "1": 3017,
+          "2": 973,
+          "3": 990,
+          "4": 915,
+          "5": 877,
+          "6": 740,
+          "7": 650,
+          "8": 552,
+          "9": 484,
+          "10": 350
+        }
+      },
+      "propaganda-campaign": {
+        "draws": 14432,
+        "byRound": {
+          "1": 4520,
+          "2": 1481,
+          "3": 1469,
+          "4": 1403,
+          "5": 1291,
+          "6": 1112,
+          "7": 994,
+          "8": 879,
+          "9": 709,
+          "10": 574
+        }
+      },
+      "military-ai-deployment": {
+        "draws": 9687,
+        "byRound": {
+          "1": 3026,
+          "2": 1067,
+          "3": 1064,
+          "4": 922,
+          "5": 826,
+          "6": 752,
+          "7": 678,
+          "8": 533,
+          "9": 419,
+          "10": 400
+        }
+      },
+      "china-espionage": {
+        "draws": 14180,
+        "byRound": {
+          "1": 4410,
+          "2": 1547,
+          "3": 1433,
+          "4": 1346,
+          "5": 1211,
+          "6": 1155,
+          "7": 960,
+          "8": 845,
+          "9": 740,
+          "10": 533
+        }
+      },
+      "state-ai-funding": {
+        "draws": 14243,
+        "byRound": {
+          "1": 4476,
+          "2": 1466,
+          "3": 1455,
+          "4": 1405,
+          "5": 1255,
+          "6": 1111,
+          "7": 1012,
+          "8": 828,
+          "9": 719,
+          "10": 516
+        }
+      },
+      "undermine-ai-regulation": {
+        "draws": 9500,
+        "byRound": {
+          "1": 3008,
+          "2": 971,
+          "3": 1033,
+          "4": 915,
+          "5": 799,
+          "6": 739,
+          "7": 702,
+          "8": 581,
+          "9": 421,
+          "10": 331
+        }
+      },
+      "steal-researchers": {
+        "draws": 9587,
+        "byRound": {
+          "1": 3015,
+          "2": 1033,
+          "3": 967,
+          "4": 942,
+          "5": 852,
+          "6": 788,
+          "7": 633,
+          "8": 530,
+          "9": 434,
+          "10": 393
+        }
+      },
+      "state-compute-buildout": {
+        "draws": 4763,
+        "byRound": {
+          "1": 1497,
+          "2": 486,
+          "3": 513,
+          "4": 459,
+          "5": 416,
+          "6": 395,
+          "7": 313,
+          "8": 273,
+          "9": 209,
+          "10": 202
+        }
+      }
+    },
+    "lab-a": {
+      "train-frontier-model": {
+        "draws": 17936,
+        "byRound": {
+          "1": 5594,
+          "2": 1980,
+          "3": 1821,
+          "4": 1726,
+          "5": 1592,
+          "6": 1387,
+          "7": 1266,
+          "8": 983,
+          "9": 905,
+          "10": 682
+        }
+      },
+      "ai-safety-program": {
+        "draws": 11919,
+        "byRound": {
+          "1": 3747,
+          "2": 1232,
+          "3": 1244,
+          "4": 1150,
+          "5": 1024,
+          "6": 986,
+          "7": 805,
+          "8": 702,
+          "9": 586,
+          "10": 443
+        }
+      },
+      "partnership-us-government": {
+        "draws": 11902,
+        "byRound": {
+          "1": 3683,
+          "2": 1269,
+          "3": 1291,
+          "4": 1176,
+          "5": 1008,
+          "6": 897,
+          "7": 841,
+          "8": 722,
+          "9": 585,
+          "10": 430
+        }
+      },
+      "hire-elite-researchers": {
+        "draws": 18062,
+        "byRound": {
+          "1": 5670,
+          "2": 1827,
+          "3": 1864,
+          "4": 1732,
+          "5": 1630,
+          "6": 1441,
+          "7": 1231,
+          "8": 1111,
+          "9": 858,
+          "10": 698
+        }
+      },
+      "raise-investor-funds": {
+        "draws": 11918,
+        "byRound": {
+          "1": 3830,
+          "2": 1215,
+          "3": 1239,
+          "4": 1198,
+          "5": 1028,
+          "6": 917,
+          "7": 813,
+          "8": 669,
+          "9": 529,
+          "10": 480
+        }
+      },
+      "public-campaign-product": {
+        "draws": 17932,
+        "byRound": {
+          "1": 5645,
+          "2": 1889,
+          "3": 1901,
+          "4": 1708,
+          "5": 1549,
+          "6": 1424,
+          "7": 1201,
+          "8": 1072,
+          "9": 868,
+          "10": 675
+        }
+      },
+      "new-product-launch": {
+        "draws": 5889,
+        "byRound": {
+          "1": 1831,
+          "2": 584,
+          "3": 623,
+          "4": 551,
+          "5": 563,
+          "6": 495,
+          "7": 425,
+          "8": 322,
+          "9": 260,
+          "10": 235
+        }
+      }
+    },
+    "lab-b": {
+      "hire-elite-researchers": {
+        "draws": 18025,
+        "byRound": {
+          "1": 5701,
+          "2": 1804,
+          "3": 1898,
+          "4": 1765,
+          "5": 1563,
+          "6": 1455,
+          "7": 1202,
+          "8": 1062,
+          "9": 849,
+          "10": 726
+        }
+      },
+      "public-campaign-product": {
+        "draws": 17849,
+        "byRound": {
+          "1": 5571,
+          "2": 1829,
+          "3": 1857,
+          "4": 1771,
+          "5": 1600,
+          "6": 1362,
+          "7": 1224,
+          "8": 1071,
+          "9": 891,
+          "10": 673
+        }
+      },
+      "new-product-launch": {
+        "draws": 6016,
+        "byRound": {
+          "1": 1898,
+          "2": 630,
+          "3": 612,
+          "4": 602,
+          "5": 529,
+          "6": 482,
+          "7": 394,
+          "8": 344,
+          "9": 307,
+          "10": 218
+        }
+      },
+      "ai-safety-program": {
+        "draws": 11939,
+        "byRound": {
+          "1": 3753,
+          "2": 1313,
+          "3": 1287,
+          "4": 1130,
+          "5": 1051,
+          "6": 932,
+          "7": 765,
+          "8": 655,
+          "9": 613,
+          "10": 440
+        }
+      },
+      "train-frontier-model": {
+        "draws": 17962,
+        "byRound": {
+          "1": 5685,
+          "2": 1878,
+          "3": 1843,
+          "4": 1748,
+          "5": 1557,
+          "6": 1397,
+          "7": 1310,
+          "8": 1059,
+          "9": 821,
+          "10": 664
+        }
+      },
+      "raise-investor-funds": {
+        "draws": 11881,
+        "byRound": {
+          "1": 3677,
+          "2": 1271,
+          "3": 1240,
+          "4": 1143,
+          "5": 1035,
+          "6": 945,
+          "7": 840,
+          "8": 672,
+          "9": 579,
+          "10": 479
+        }
+      },
+      "partnership-us-government": {
+        "draws": 11886,
+        "byRound": {
+          "1": 3715,
+          "2": 1271,
+          "3": 1246,
+          "4": 1082,
+          "5": 1059,
+          "6": 974,
+          "7": 847,
+          "8": 718,
+          "9": 531,
+          "10": 443
+        }
+      }
+    },
+    "model": {
+      "deceptive-alignment": {
+        "draws": 5854,
+        "byRound": {
+          "1": 1892,
+          "2": 578,
+          "3": 636,
+          "4": 547,
+          "5": 502,
+          "6": 482,
+          "7": 392,
+          "8": 330,
+          "9": 293,
+          "10": 202
+        }
+      },
+      "ecosystem-expansion": {
+        "draws": 17840,
+        "byRound": {
+          "1": 5589,
+          "2": 1839,
+          "3": 1907,
+          "4": 1738,
+          "5": 1606,
+          "6": 1367,
+          "7": 1242,
+          "8": 994,
+          "9": 848,
+          "10": 710
+        }
+      },
+      "emergent-behavior": {
+        "draws": 12094,
+        "byRound": {
+          "1": 3696,
+          "2": 1313,
+          "3": 1262,
+          "4": 1196,
+          "5": 1059,
+          "6": 927,
+          "7": 878,
+          "8": 738,
+          "9": 584,
+          "10": 441
+        }
+      },
+      "full-autonomy": {
+        "draws": 6056,
+        "byRound": {
+          "1": 1866,
+          "2": 636,
+          "3": 648,
+          "4": 566,
+          "5": 504,
+          "6": 486,
+          "7": 423,
+          "8": 380,
+          "9": 306,
+          "10": 241
+        }
+      },
+      "bias-correction": {
+        "draws": 11942,
+        "byRound": {
+          "1": 3803,
+          "2": 1217,
+          "3": 1215,
+          "4": 1122,
+          "5": 1081,
+          "6": 922,
+          "7": 841,
+          "8": 701,
+          "9": 578,
+          "10": 462
+        }
+      },
+      "self-improvement": {
+        "draws": 17917,
+        "byRound": {
+          "1": 5655,
+          "2": 1908,
+          "3": 1848,
+          "4": 1734,
+          "5": 1572,
+          "6": 1425,
+          "7": 1219,
+          "8": 1016,
+          "9": 867,
+          "10": 673
+        }
+      },
+      "open-weight-release": {
+        "draws": 5953,
+        "byRound": {
+          "1": 1879,
+          "2": 627,
+          "3": 611,
+          "4": 556,
+          "5": 532,
+          "6": 492,
+          "7": 415,
+          "8": 321,
+          "9": 291,
+          "10": 229
+        }
+      },
+      "value-lock-in": {
+        "draws": 5914,
+        "byRound": {
+          "1": 1855,
+          "2": 648,
+          "3": 595,
+          "4": 581,
+          "5": 487,
+          "6": 458,
+          "7": 386,
+          "8": 379,
+          "9": 285,
+          "10": 240
+        }
+      },
+      "positive-crisis-response": {
+        "draws": 11988,
+        "byRound": {
+          "1": 3765,
+          "2": 1230,
+          "3": 1261,
+          "4": 1201,
+          "5": 1051,
+          "6": 988,
+          "7": 786,
+          "8": 722,
+          "9": 539,
+          "10": 445
+        }
+      }
+    }
+  },
+  "actionCards": {
+    "ecosystem-expansion": {
+      "name": "Ecosystem Expansion",
+      "uses": 14049,
+      "successes": 5931,
+      "failures": 8118,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 17598,
+        "resources": 22293,
+        "safety": -939,
+        "publicSupport": 4521
+      },
+      "totalAbsoluteImpact": 57033,
+      "totalNetImpact": 43473
+    },
+    "ai-safety-program": {
+      "name": "AI Safety Program",
+      "uses": 18848,
+      "successes": 9455,
+      "failures": 9393,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": -15254,
+        "resources": -2458,
+        "safety": 32384,
+        "publicSupport": 32052
+      },
+      "totalAbsoluteImpact": 90600,
+      "totalNetImpact": 46724
+    },
+    "hire-elite-researchers": {
+      "name": "Hire New Batch of Elite Researchers",
+      "uses": 28521,
+      "successes": 12814,
+      "failures": 15707,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 5280,
+        "resources": -5042,
+        "safety": 19623,
+        "publicSupport": 6958
+      },
+      "totalAbsoluteImpact": 55051,
+      "totalNetImpact": 26819
+    },
+    "forced-technology-transfer": {
+      "name": "Forced Technology Transfer",
+      "uses": 7557,
+      "successes": 3937,
+      "failures": 3620,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 4939,
+        "resources": 2865,
+        "safety": 1895,
+        "publicSupport": -1338
+      },
+      "totalAbsoluteImpact": 13041,
+      "totalNetImpact": 8361
+    },
+    "us-espionage": {
+      "name": "Espionage",
+      "uses": 12484,
+      "successes": 4587,
+      "failures": 7897,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 2117,
+        "resources": -591,
+        "safety": 2930,
+        "publicSupport": -312
+      },
+      "totalAbsoluteImpact": 17090,
+      "totalNetImpact": 4144
+    },
+    "train-frontier-model": {
+      "name": "Train New Frontier Model",
+      "uses": 28395,
+      "successes": 12535,
+      "failures": 15860,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 40189,
+        "resources": -16336,
+        "safety": 7139,
+        "publicSupport": 6923
+      },
+      "totalAbsoluteImpact": 70587,
+      "totalNetImpact": 37915
+    },
+    "public-campaign-product": {
+      "name": "Public Campaign For Product",
+      "uses": 28358,
+      "successes": 16946,
+      "failures": 11412,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 5142,
+        "resources": -16395,
+        "safety": 7113,
+        "publicSupport": 63770
+      },
+      "totalAbsoluteImpact": 103860,
+      "totalNetImpact": 59630
+    },
+    "rare-earth-restrictions": {
+      "name": "Rare Earth Export Restrictions",
+      "uses": 7589,
+      "successes": 4181,
+      "failures": 3408,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 5049,
+        "resources": -13204,
+        "safety": 1880,
+        "publicSupport": -1151
+      },
+      "totalAbsoluteImpact": 23378,
+      "totalNetImpact": -7426
+    },
+    "emergent-behavior": {
+      "name": "Emergent Behavior",
+      "uses": 9559,
+      "successes": 0,
+      "failures": 983,
+      "otherOutcomes": 8576,
+      "cumulativeImpact": {
+        "capabilities": 50008,
+        "resources": 3196,
+        "safety": 4166,
+        "publicSupport": 6604
+      },
+      "totalAbsoluteImpact": 101178,
+      "totalNetImpact": 63974
+    },
+    "raise-investor-funds": {
+      "name": "Raise Funds From Investors",
+      "uses": 18712,
+      "successes": 15741,
+      "failures": 2971,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 3541,
+        "resources": 35869,
+        "safety": 4633,
+        "publicSupport": -11303
+      },
+      "totalAbsoluteImpact": 55346,
+      "totalNetImpact": 32740
+    },
+    "federal-investment": {
+      "name": "Federal AI Investment in Industry Leaders",
+      "uses": 20885,
+      "successes": 7702,
+      "failures": 13183,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 21779,
+        "resources": -5829,
+        "safety": 12701,
+        "publicSupport": -1327
+      },
+      "totalAbsoluteImpact": 51674,
+      "totalNetImpact": 27324
+    },
+    "military-ai-deployment": {
+      "name": "Military AI Deployment",
+      "uses": 7682,
+      "successes": 4997,
+      "failures": 2685,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 9213,
+        "resources": -88,
+        "safety": -3094,
+        "publicSupport": -14743
+      },
+      "totalAbsoluteImpact": 30988,
+      "totalNetImpact": -8712
+    },
+    "ai-regulation": {
+      "name": "Enacting AI Regulation",
+      "uses": 12689,
+      "successes": 3954,
+      "failures": 8735,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": -1845,
+        "resources": 76,
+        "safety": 17525,
+        "publicSupport": -294
+      },
+      "totalAbsoluteImpact": 31790,
+      "totalNetImpact": 15462
+    },
+    "open-weight-release": {
+      "name": "Open Weight Release",
+      "uses": 4679,
+      "successes": 3526,
+      "failures": 1153,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 13270,
+        "resources": 1584,
+        "safety": -2917,
+        "publicSupport": 7339
+      },
+      "totalAbsoluteImpact": 26064,
+      "totalNetImpact": 19276
+    },
+    "new-product-launch": {
+      "name": "New Product Launch",
+      "uses": 9395,
+      "successes": 6357,
+      "failures": 3038,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 5382,
+        "resources": 8600,
+        "safety": 2313,
+        "publicSupport": 3198
+      },
+      "totalAbsoluteImpact": 19665,
+      "totalNetImpact": 19493
+    },
+    "china-espionage": {
+      "name": "Espionage",
+      "uses": 11231,
+      "successes": 3346,
+      "failures": 7885,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 2947,
+        "resources": 177,
+        "safety": 2870,
+        "publicSupport": -19
+      },
+      "totalAbsoluteImpact": 15431,
+      "totalNetImpact": 5975
+    },
+    "bias-correction": {
+      "name": "Bias Correction",
+      "uses": 9406,
+      "successes": 6125,
+      "failures": 3281,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 0,
+        "resources": -4457,
+        "safety": 20354,
+        "publicSupport": 6146
+      },
+      "totalAbsoluteImpact": 34345,
+      "totalNetImpact": 22043
+    },
+    "state-ai-funding": {
+      "name": "State AI Funding",
+      "uses": 11252,
+      "successes": 3427,
+      "failures": 7825,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 5798,
+        "resources": -5181,
+        "safety": 6128,
+        "publicSupport": 2834
+      },
+      "totalAbsoluteImpact": 19941,
+      "totalNetImpact": 9579
+    },
+    "self-improvement": {
+      "name": "Self-Improvement",
+      "uses": 14187,
+      "successes": 12013,
+      "failures": 2174,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 66187,
+        "resources": -6669,
+        "safety": 5721,
+        "publicSupport": 4607
+      },
+      "totalAbsoluteImpact": 83184,
+      "totalNetImpact": 69846
+    },
+    "undermine-ai-regulation": {
+      "name": "Undermine AI Regulation",
+      "uses": 7472,
+      "successes": 4610,
+      "failures": 2862,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 5487,
+        "resources": 1827,
+        "safety": -20043,
+        "publicSupport": -733
+      },
+      "totalAbsoluteImpact": 31856,
+      "totalNetImpact": -13462
+    },
+    "chip-export-ban": {
+      "name": "Chip Export Ban",
+      "uses": 8284,
+      "successes": 4485,
+      "failures": 3799,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": -4237,
+        "resources": -3394,
+        "safety": 1999,
+        "publicSupport": 6535
+      },
+      "totalAbsoluteImpact": 20451,
+      "totalNetImpact": 903
+    },
+    "positive-crisis-response": {
+      "name": "Positive Crisis Response",
+      "uses": 9474,
+      "successes": 0,
+      "failures": 2146,
+      "otherOutcomes": 7328,
+      "cumulativeImpact": {
+        "capabilities": 0,
+        "resources": 3152,
+        "safety": 8370,
+        "publicSupport": 16723
+      },
+      "totalAbsoluteImpact": 30645,
+      "totalNetImpact": 28245
+    },
+    "public-campaign-for-ai": {
+      "name": "Public Campaign For AI",
+      "uses": 8395,
+      "successes": 4350,
+      "failures": 4045,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 4242,
+        "resources": 10711,
+        "safety": -2148,
+        "publicSupport": 7792
+      },
+      "totalAbsoluteImpact": 27165,
+      "totalNetImpact": 20597
+    },
+    "full-autonomy": {
+      "name": "Full Autonomy",
+      "uses": 4817,
+      "successes": 3716,
+      "failures": 1101,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 29625,
+        "resources": 9060,
+        "safety": 1289,
+        "publicSupport": -8463
+      },
+      "totalAbsoluteImpact": 50009,
+      "totalNetImpact": 31511
+    },
+    "public-campaign-against-ai": {
+      "name": "Public Campaign Against AI",
+      "uses": 8513,
+      "successes": 4942,
+      "failures": 3571,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 1406,
+        "resources": -5171,
+        "safety": 6903,
+        "publicSupport": 1746
+      },
+      "totalAbsoluteImpact": 21256,
+      "totalNetImpact": 4884
+    },
+    "value-lock-in": {
+      "name": "Value Lock-In",
+      "uses": 4744,
+      "successes": 0,
+      "failures": 2358,
+      "otherOutcomes": 2386,
+      "cumulativeImpact": {
+        "capabilities": -179,
+        "resources": 389,
+        "safety": 7757,
+        "publicSupport": 3155
+      },
+      "totalAbsoluteImpact": 12842,
+      "totalNetImpact": 11122
+    },
+    "steal-researchers": {
+      "name": "Steal Researchers From American AI Labs",
+      "uses": 7558,
+      "successes": 3211,
+      "failures": 4347,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 1547,
+        "resources": 1867,
+        "safety": 2016,
+        "publicSupport": -1901
+      },
+      "totalAbsoluteImpact": 9661,
+      "totalNetImpact": 3529
+    },
+    "propaganda-campaign": {
+      "name": "Propaganda Campaign",
+      "uses": 11435,
+      "successes": 7078,
+      "failures": 4357,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 2497,
+        "resources": -5197,
+        "safety": 2883,
+        "publicSupport": -5623
+      },
+      "totalAbsoluteImpact": 18042,
+      "totalNetImpact": -5440
+    },
+    "partnership-us-government": {
+      "name": "Partnership With US Government",
+      "uses": 18887,
+      "successes": 12844,
+      "failures": 6043,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 10847,
+        "resources": 30278,
+        "safety": -7426,
+        "publicSupport": -97
+      },
+      "totalAbsoluteImpact": 57752,
+      "totalNetImpact": 33602
+    },
+    "state-compute-buildout": {
+      "name": "State Compute Buildout",
+      "uses": 3782,
+      "successes": 1208,
+      "failures": 2574,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 3069,
+        "resources": -3415,
+        "safety": 938,
+        "publicSupport": 963
+      },
+      "totalAbsoluteImpact": 8385,
+      "totalNetImpact": 1555
+    },
+    "international-ai-treaty": {
+      "name": "International AI Treaty",
+      "uses": 4308,
+      "successes": 1978,
+      "failures": 2330,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": -18414,
+        "resources": 1089,
+        "safety": 19369,
+        "publicSupport": 6952
+      },
+      "totalAbsoluteImpact": 46634,
+      "totalNetImpact": 8996
+    },
+    "deceptive-alignment": {
+      "name": "Deceptive Alignment",
+      "uses": 4643,
+      "successes": 0,
+      "failures": 625,
+      "otherOutcomes": 4018,
+      "cumulativeImpact": {
+        "capabilities": 23507,
+        "resources": 1589,
+        "safety": 1489,
+        "publicSupport": 5274
+      },
+      "totalAbsoluteImpact": 31859,
+      "totalNetImpact": 31859
+    }
+  },
+  "topCardsByUsage": [
+    {
+      "key": "hire-elite-researchers",
+      "name": "Hire New Batch of Elite Researchers",
+      "uses": 28521,
+      "successes": 12814,
+      "failures": 15707,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 5280,
+        "resources": -5042,
+        "safety": 19623,
+        "publicSupport": 6958
+      },
+      "totalAbsoluteImpact": 55051,
+      "totalNetImpact": 26819
+    },
+    {
+      "key": "train-frontier-model",
+      "name": "Train New Frontier Model",
+      "uses": 28395,
+      "successes": 12535,
+      "failures": 15860,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 40189,
+        "resources": -16336,
+        "safety": 7139,
+        "publicSupport": 6923
+      },
+      "totalAbsoluteImpact": 70587,
+      "totalNetImpact": 37915
+    },
+    {
+      "key": "public-campaign-product",
+      "name": "Public Campaign For Product",
+      "uses": 28358,
+      "successes": 16946,
+      "failures": 11412,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 5142,
+        "resources": -16395,
+        "safety": 7113,
+        "publicSupport": 63770
+      },
+      "totalAbsoluteImpact": 103860,
+      "totalNetImpact": 59630
+    },
+    {
+      "key": "federal-investment",
+      "name": "Federal AI Investment in Industry Leaders",
+      "uses": 20885,
+      "successes": 7702,
+      "failures": 13183,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 21779,
+        "resources": -5829,
+        "safety": 12701,
+        "publicSupport": -1327
+      },
+      "totalAbsoluteImpact": 51674,
+      "totalNetImpact": 27324
+    },
+    {
+      "key": "partnership-us-government",
+      "name": "Partnership With US Government",
+      "uses": 18887,
+      "successes": 12844,
+      "failures": 6043,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 10847,
+        "resources": 30278,
+        "safety": -7426,
+        "publicSupport": -97
+      },
+      "totalAbsoluteImpact": 57752,
+      "totalNetImpact": 33602
+    },
+    {
+      "key": "ai-safety-program",
+      "name": "AI Safety Program",
+      "uses": 18848,
+      "successes": 9455,
+      "failures": 9393,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": -15254,
+        "resources": -2458,
+        "safety": 32384,
+        "publicSupport": 32052
+      },
+      "totalAbsoluteImpact": 90600,
+      "totalNetImpact": 46724
+    },
+    {
+      "key": "raise-investor-funds",
+      "name": "Raise Funds From Investors",
+      "uses": 18712,
+      "successes": 15741,
+      "failures": 2971,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 3541,
+        "resources": 35869,
+        "safety": 4633,
+        "publicSupport": -11303
+      },
+      "totalAbsoluteImpact": 55346,
+      "totalNetImpact": 32740
+    },
+    {
+      "key": "self-improvement",
+      "name": "Self-Improvement",
+      "uses": 14187,
+      "successes": 12013,
+      "failures": 2174,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 66187,
+        "resources": -6669,
+        "safety": 5721,
+        "publicSupport": 4607
+      },
+      "totalAbsoluteImpact": 83184,
+      "totalNetImpact": 69846
+    },
+    {
+      "key": "ecosystem-expansion",
+      "name": "Ecosystem Expansion",
+      "uses": 14049,
+      "successes": 5931,
+      "failures": 8118,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 17598,
+        "resources": 22293,
+        "safety": -939,
+        "publicSupport": 4521
+      },
+      "totalAbsoluteImpact": 57033,
+      "totalNetImpact": 43473
+    },
+    {
+      "key": "ai-regulation",
+      "name": "Enacting AI Regulation",
+      "uses": 12689,
+      "successes": 3954,
+      "failures": 8735,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": -1845,
+        "resources": 76,
+        "safety": 17525,
+        "publicSupport": -294
+      },
+      "totalAbsoluteImpact": 31790,
+      "totalNetImpact": 15462
+    },
+    {
+      "key": "us-espionage",
+      "name": "Espionage",
+      "uses": 12484,
+      "successes": 4587,
+      "failures": 7897,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 2117,
+        "resources": -591,
+        "safety": 2930,
+        "publicSupport": -312
+      },
+      "totalAbsoluteImpact": 17090,
+      "totalNetImpact": 4144
+    },
+    {
+      "key": "propaganda-campaign",
+      "name": "Propaganda Campaign",
+      "uses": 11435,
+      "successes": 7078,
+      "failures": 4357,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 2497,
+        "resources": -5197,
+        "safety": 2883,
+        "publicSupport": -5623
+      },
+      "totalAbsoluteImpact": 18042,
+      "totalNetImpact": -5440
+    }
+  ],
+  "topCardsByAbsoluteImpact": [
+    {
+      "key": "public-campaign-product",
+      "name": "Public Campaign For Product",
+      "uses": 28358,
+      "successes": 16946,
+      "failures": 11412,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 5142,
+        "resources": -16395,
+        "safety": 7113,
+        "publicSupport": 63770
+      },
+      "totalAbsoluteImpact": 103860,
+      "totalNetImpact": 59630
+    },
+    {
+      "key": "emergent-behavior",
+      "name": "Emergent Behavior",
+      "uses": 9559,
+      "successes": 0,
+      "failures": 983,
+      "otherOutcomes": 8576,
+      "cumulativeImpact": {
+        "capabilities": 50008,
+        "resources": 3196,
+        "safety": 4166,
+        "publicSupport": 6604
+      },
+      "totalAbsoluteImpact": 101178,
+      "totalNetImpact": 63974
+    },
+    {
+      "key": "ai-safety-program",
+      "name": "AI Safety Program",
+      "uses": 18848,
+      "successes": 9455,
+      "failures": 9393,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": -15254,
+        "resources": -2458,
+        "safety": 32384,
+        "publicSupport": 32052
+      },
+      "totalAbsoluteImpact": 90600,
+      "totalNetImpact": 46724
+    },
+    {
+      "key": "self-improvement",
+      "name": "Self-Improvement",
+      "uses": 14187,
+      "successes": 12013,
+      "failures": 2174,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 66187,
+        "resources": -6669,
+        "safety": 5721,
+        "publicSupport": 4607
+      },
+      "totalAbsoluteImpact": 83184,
+      "totalNetImpact": 69846
+    },
+    {
+      "key": "train-frontier-model",
+      "name": "Train New Frontier Model",
+      "uses": 28395,
+      "successes": 12535,
+      "failures": 15860,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 40189,
+        "resources": -16336,
+        "safety": 7139,
+        "publicSupport": 6923
+      },
+      "totalAbsoluteImpact": 70587,
+      "totalNetImpact": 37915
+    },
+    {
+      "key": "partnership-us-government",
+      "name": "Partnership With US Government",
+      "uses": 18887,
+      "successes": 12844,
+      "failures": 6043,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 10847,
+        "resources": 30278,
+        "safety": -7426,
+        "publicSupport": -97
+      },
+      "totalAbsoluteImpact": 57752,
+      "totalNetImpact": 33602
+    },
+    {
+      "key": "ecosystem-expansion",
+      "name": "Ecosystem Expansion",
+      "uses": 14049,
+      "successes": 5931,
+      "failures": 8118,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 17598,
+        "resources": 22293,
+        "safety": -939,
+        "publicSupport": 4521
+      },
+      "totalAbsoluteImpact": 57033,
+      "totalNetImpact": 43473
+    },
+    {
+      "key": "raise-investor-funds",
+      "name": "Raise Funds From Investors",
+      "uses": 18712,
+      "successes": 15741,
+      "failures": 2971,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 3541,
+        "resources": 35869,
+        "safety": 4633,
+        "publicSupport": -11303
+      },
+      "totalAbsoluteImpact": 55346,
+      "totalNetImpact": 32740
+    },
+    {
+      "key": "hire-elite-researchers",
+      "name": "Hire New Batch of Elite Researchers",
+      "uses": 28521,
+      "successes": 12814,
+      "failures": 15707,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 5280,
+        "resources": -5042,
+        "safety": 19623,
+        "publicSupport": 6958
+      },
+      "totalAbsoluteImpact": 55051,
+      "totalNetImpact": 26819
+    },
+    {
+      "key": "federal-investment",
+      "name": "Federal AI Investment in Industry Leaders",
+      "uses": 20885,
+      "successes": 7702,
+      "failures": 13183,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 21779,
+        "resources": -5829,
+        "safety": 12701,
+        "publicSupport": -1327
+      },
+      "totalAbsoluteImpact": 51674,
+      "totalNetImpact": 27324
+    },
+    {
+      "key": "full-autonomy",
+      "name": "Full Autonomy",
+      "uses": 4817,
+      "successes": 3716,
+      "failures": 1101,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": 29625,
+        "resources": 9060,
+        "safety": 1289,
+        "publicSupport": -8463
+      },
+      "totalAbsoluteImpact": 50009,
+      "totalNetImpact": 31511
+    },
+    {
+      "key": "international-ai-treaty",
+      "name": "International AI Treaty",
+      "uses": 4308,
+      "successes": 1978,
+      "failures": 2330,
+      "otherOutcomes": 0,
+      "cumulativeImpact": {
+        "capabilities": -18414,
+        "resources": 1089,
+        "safety": 19369,
+        "publicSupport": 6952
+      },
+      "totalAbsoluteImpact": 46634,
+      "totalNetImpact": 8996
+    }
+  ]
+}

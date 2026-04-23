@@ -259,6 +259,74 @@ function createActionSummaryEntry(card) {
   };
 }
 
+function parseObjectiveText(objectiveText) {
+  if (!objectiveText) {
+    return null;
+  }
+
+  const sections = objectiveText.split('\n\n');
+  const title = sections[0] ?? '';
+  const description = sections[1] ?? '';
+  const outcomeLine = sections.find((section) => section.startsWith('Outcome: ')) ?? '';
+  const conditionsBlock = sections.find((section) => section.startsWith('Conditions:')) ?? '';
+
+  return {
+    title,
+    description,
+    outcome: outcomeLine.replace('Outcome: ', ''),
+    conditions: conditionsBlock
+      .split('\n')
+      .slice(1)
+      .map((line) => line.replace(/^- /, '').trim())
+      .filter(Boolean),
+  };
+}
+
+function getObjectiveRollSummary(parsedObjective, activePlayer, players, objectiveEligible) {
+  if (!parsedObjective || !activePlayer) {
+    return { label: 'No objective loaded', chance: null, details: '' };
+  }
+
+  if (!objectiveEligible) {
+    return { label: 'Conditions not met', chance: 0, details: 'Meet every listed condition before this roll becomes available.' };
+  }
+
+  if (parsedObjective.outcome === 'Automatic Victory') {
+    return { label: 'Automatic win', chance: 1, details: 'No die roll needed.' };
+  }
+
+  if (parsedObjective.outcome === 'Roll For Safety') {
+    const safety = activePlayer.meters.safety ?? 0;
+    return {
+      label: `Roll <= Safety ${safety}`,
+      chance: safety / 10,
+      details: '',
+    };
+  }
+
+  if (parsedObjective.outcome === 'Roll Safety Against Capabilities') {
+    const model = players.find((player) => player.power_key === 'model');
+    const target = Math.max(0, Math.min(10, 7 - (model?.meters.capabilities ?? 0) + (activePlayer.meters.safety ?? 0)));
+    return {
+      label: `Roll <= ${target}`,
+      chance: target / 10,
+      details: '',
+    };
+  }
+
+  return { label: parsedObjective.outcome, chance: null, details: '' };
+}
+
+function shouldDeclareVictory(players, powerKey, seatState) {
+  const activePlayer = players.find((player) => player.power_key === powerKey) ?? null;
+  const objectiveEligible = Boolean(activePlayer && isObjectiveEligible(players, powerKey, seatState?.secretState));
+  const parsedObjective = parseObjectiveText(seatState?.objective ?? '');
+  const objectiveRollSummary = getObjectiveRollSummary(parsedObjective, activePlayer, players, objectiveEligible);
+  const victoryChance = objectiveRollSummary.chance ?? 0;
+
+  return objectiveEligible && victoryChance > 0.4;
+}
+
 function summarizeTopEntries(entries, limit, valueGetter) {
   return Object.entries(entries)
     .sort((left, right) => valueGetter(right[1]) - valueGetter(left[1]))
@@ -340,7 +408,7 @@ function runSingleSimulation(cardDrawSummary, actionCardSummary, eventSummary) {
       for (const powerKey of turnOrder) {
         nextManagerState[powerKey] = {
           ...nextManagerState[powerKey],
-          declaredVictory: isObjectiveEligible(state.players, powerKey, nextManagerState[powerKey].secretState),
+          declaredVictory: shouldDeclareVictory(state.players, powerKey, nextManagerState[powerKey]),
         };
       }
 
