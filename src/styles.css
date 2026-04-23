@@ -141,6 +141,8 @@ button {
   max-width: none;
   margin: 0;
   padding: 0;
+  height: 100svh;
+  overflow: hidden;
 }
 
 .topbar,
@@ -683,13 +685,17 @@ button {
 
 .game-surface {
   display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
   gap: 0.6rem;
   padding: 0 0 0.35rem;
+  height: 100svh;
+  overflow: hidden;
 }
 
 .game-stage {
   position: relative;
-  min-height: 100svh;
+  min-height: 0;
+  height: 100%;
   overflow: hidden;
   background:
     radial-gradient(circle at 18% 16%, rgba(125, 211, 252, 0.18), transparent 24%),
@@ -700,6 +706,7 @@ button {
 .game-surface-map {
   position: absolute;
   inset: 0;
+  overflow: hidden;
 }
 
 .game-surface-map::after {
@@ -985,8 +992,8 @@ button.ready-confirmed:disabled {
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: contain;
-  object-position: center;
+  object-fit: cover;
+  object-position: center top;
   opacity: 0.96;
   filter: saturate(1.02) contrast(1.02);
 }
