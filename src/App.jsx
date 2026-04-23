@@ -1454,7 +1454,17 @@ function App() {
 
     if (isLocalGame) {
       setGameState(localGameState);
-      setActivePowerKey(localGameState?.humanPowerKey ?? '');
+      setActivePowerKey((current) => {
+        if (!localGameState) {
+          return '';
+        }
+
+        if (current && localGameState.managerState?.[current]) {
+          return current;
+        }
+
+        return localGameState.humanPowerKey ?? '';
+      });
       setStatusMessage('Loaded local robot match.');
       return;
     }
@@ -1536,7 +1546,32 @@ function App() {
   const managedSeat = canManageGame && activePowerKey ? gameState?.managerState?.[activePowerKey] ?? null : null;
 
   React.useEffect(() => {
-    if (!session?.user || !gameState || !activePowerKey) {
+    if (!session?.user) {
+      setPrivateState(EMPTY_PRIVATE_STATE);
+      return;
+    }
+
+    if (isLocalGame) {
+      if (!activePowerKey) {
+        setPrivateState(EMPTY_PRIVATE_STATE);
+        return;
+      }
+
+      if (managedSeat) {
+        setPrivateState({
+          objective: managedSeat.objective ?? '',
+          selectedAction: managedSeat.selectedAction ?? '',
+          selectedCardKey: managedSeat.selectedCardKey ?? '',
+          selectedActionPayload: managedSeat.selectedActionPayload ?? {},
+          declaredVictory: Boolean(managedSeat.declaredVictory),
+          secretState: managedSeat.secretState ?? {},
+          cards: managedSeat.hand ?? [],
+        });
+      }
+      return;
+    }
+
+    if (!gameState || !activePowerKey) {
       setPrivateState(EMPTY_PRIVATE_STATE);
       return;
     }
@@ -1587,7 +1622,7 @@ function App() {
     return () => {
       isMounted = false;
     };
-  }, [activePlayer?.id, activePowerKey, managedSeat, privateSeatRefreshTick, session?.user]);
+  }, [activePlayer?.id, activePowerKey, isLocalGame, managedSeat, privateSeatRefreshTick, session?.user]);
 
   React.useEffect(() => {
     if (!activePowerKey || !privateState.cards.length) {
