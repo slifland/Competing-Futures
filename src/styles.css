@@ -387,6 +387,13 @@ button {
   gap: 0.8rem;
 }
 
+.game-list-admin-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: stretch;
+}
+
 .phase-list article {
   padding: 1rem;
   transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
@@ -407,6 +414,22 @@ button {
   padding: 0.95rem;
   color: var(--text);
   text-align: left;
+}
+
+.game-quick-delete {
+  padding: 0.95rem 1rem;
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  border-radius: 22px;
+  background: rgba(120, 24, 36, 0.2);
+  color: #fecaca;
+  font-weight: 700;
+  transition: transform 150ms ease, border-color 150ms ease, background 150ms ease;
+}
+
+.game-quick-delete:hover {
+  transform: translateY(-2px);
+  border-color: rgba(248, 113, 113, 0.6);
+  background: rgba(120, 24, 36, 0.32);
 }
 
 .game-tab small,
@@ -812,11 +835,12 @@ button {
 }
 
 .game-overlay-layer {
-  position: absolute;
+  position: fixed;
   inset: 0;
+  z-index: 12;
   display: grid;
   place-items: center;
-  padding: 5rem 0.8rem 1rem 6.3rem;
+  padding: 3.6rem 0.8rem 2.2rem 6.3rem;
 }
 
 .game-overlay-card {
@@ -1449,7 +1473,7 @@ button.ready-confirmed:disabled {
   }
 
   .game-overlay-layer {
-    padding: 6.5rem 0.8rem 1rem;
+    padding: 5.2rem 0.8rem 2rem;
   }
 
   .overlay-hand-grid {
@@ -1500,7 +1524,7 @@ button.ready-confirmed:disabled {
   }
 
   .game-overlay-layer {
-    padding: 7rem 0.7rem 0.8rem;
+    padding: 5.8rem 0.7rem 1.6rem;
   }
 
   .game-overlay-card {

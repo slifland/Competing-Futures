@@ -128,7 +128,16 @@ function ConfigErrorPage({ message }) {
   );
 }
 
-function GameList({ title, games, memberships, selectedGameId, onSelect, emptyMessage }) {
+function GameList({
+  title,
+  games,
+  memberships,
+  selectedGameId,
+  onSelect,
+  emptyMessage,
+  canQuickDelete = false,
+  onDelete = null,
+}) {
   return (
     <section className="dashboard-section">
       <div className="section-heading">
@@ -139,7 +148,7 @@ function GameList({ title, games, memberships, selectedGameId, onSelect, emptyMe
         <div className="game-list">
           {games.map((game) => {
             const membership = memberships.find((entry) => entry.game_id === game.id) ?? null;
-            return (
+            const gameCard = (
               <button
                 type="button"
                 key={game.id}
@@ -157,6 +166,24 @@ function GameList({ title, games, memberships, selectedGameId, onSelect, emptyMe
                       : 'No seat claimed'}
                 </small>
               </button>
+            );
+
+            if (!canQuickDelete || !onDelete) {
+              return gameCard;
+            }
+
+            return (
+              <div key={game.id} className="game-list-admin-item">
+                {gameCard}
+                <button
+                  type="button"
+                  className="game-quick-delete"
+                  onClick={() => onDelete(game)}
+                  aria-label={`Delete ${game.name}`}
+                >
+                  Delete
+                </button>
+              </div>
             );
           })}
         </div>
@@ -325,6 +352,8 @@ const EMPTY_PRIVATE_STATE = {
 const WALKTHROUGH_STORAGE_KEY = 'cf-lobby-walkthrough-dismissed';
 const LOCAL_GAME_ID = 'local-robots';
 const LOCAL_JOIN_CODE = 'LOCAL';
+const LOCAL_GAME_STATE_STORAGE_KEY = 'cf-local-game-state';
+const LOCAL_SEAT_KEY_STORAGE_KEY = 'cf-local-seat-key';
 
 function randomInt(maxExclusive) {
   return Math.floor(Math.random() * maxExclusive);
@@ -1123,8 +1152,26 @@ function App() {
   const [errorMessage, setErrorMessage] = React.useState('');
   const [toast, setToast] = React.useState(null);
   const [hudPanel, setHudPanel] = React.useState(null);
-  const [localSeatKey, setLocalSeatKey] = React.useState('us');
-  const [localGameState, setLocalGameState] = React.useState(null);
+  const [localSeatKey, setLocalSeatKey] = React.useState(() => {
+    if (typeof window === 'undefined') {
+      return 'us';
+    }
+
+    return window.localStorage.getItem(LOCAL_SEAT_KEY_STORAGE_KEY) || 'us';
+  });
+  const [localGameState, setLocalGameState] = React.useState(() => {
+    if (typeof window === 'undefined') {
+      return null;
+    }
+
+    try {
+      const raw = window.localStorage.getItem(LOCAL_GAME_STATE_STORAGE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      window.localStorage.removeItem(LOCAL_GAME_STATE_STORAGE_KEY);
+      return null;
+    }
+  });
   const seenAnnouncementsRef = React.useRef(new Set());
   const seenRevealKeysRef = React.useRef(new Set());
   const channelRef = React.useRef(null);
@@ -1210,7 +1257,9 @@ function App() {
       setProfile(null);
       setGames([]);
       setMemberships([]);
-      setSelectedGameId('');
+      if (authReady) {
+        setSelectedGameId('');
+      }
       setGameState(null);
       setActivePowerKey('');
       setPrivateState(EMPTY_PRIVATE_STATE);
@@ -1269,6 +1318,27 @@ function App() {
   React.useEffect(() => {
     selectedGameIdRef.current = selectedGameId;
   }, [selectedGameId]);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    window.localStorage.setItem(LOCAL_SEAT_KEY_STORAGE_KEY, localSeatKey);
+  }, [localSeatKey]);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    if (!localGameState) {
+      window.localStorage.removeItem(LOCAL_GAME_STATE_STORAGE_KEY);
+      return;
+    }
+
+    window.localStorage.setItem(LOCAL_GAME_STATE_STORAGE_KEY, JSON.stringify(localGameState));
+  }, [localGameState]);
 
   const scheduleLobbyRefresh = React.useCallback(() => {
     if (lobbyRefreshTimerRef.current) {
@@ -2184,6 +2254,36 @@ function App() {
       setPrivateState(EMPTY_PRIVATE_STATE);
       setRefreshKey((current) => current + 1);
       setStatusMessage(`Deleted ${activeGame.name}.`);
+    } catch (error) {
+      setErrorMessage(error.message);
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function handleDeleteGameFromLobby(game) {
+    if (!game || !isAdmin) {
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete "${game.name}"? This cannot be undone.`);
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setActionLoading(true);
+      setErrorMessage('');
+      await deleteGame(game.id);
+      if (selectedGameId === game.id) {
+        setSelectedGameId('');
+        setGameState(null);
+        setActivePowerKey('');
+        setPrivateState(EMPTY_PRIVATE_STATE);
+      }
+      setRefreshKey((current) => current + 1);
+      setStatusMessage(`Deleted ${game.name}.`);
     } catch (error) {
       setErrorMessage(error.message);
     } finally {
@@ -3424,6 +3524,8 @@ function App() {
                     selectedGameId={selectedGameId}
                     onSelect={setSelectedGameId}
                     emptyMessage="No active games yet."
+                    canQuickDelete={isAdmin}
+                    onDelete={handleDeleteGameFromLobby}
                   />
                   <GameList
                     title="Past games you played"
@@ -3432,6 +3534,8 @@ function App() {
                     selectedGameId={selectedGameId}
                     onSelect={setSelectedGameId}
                     emptyMessage="Finished games will appear here."
+                    canQuickDelete={isAdmin}
+                    onDelete={handleDeleteGameFromLobby}
                   />
                 </div>
               </section>
