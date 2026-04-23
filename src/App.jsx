@@ -877,6 +877,19 @@ function getObjectiveRollSummary(parsedObjective, activePlayer, players, objecti
   return { label: parsedObjective.outcome, chance: null, details: 'This outcome uses a custom rule not yet broken out into a visible formula.' };
 }
 
+function getLocalVictoryDecision(players, powerKey, seatState) {
+  const activePlayer = players.find((player) => player.power_key === powerKey) ?? null;
+  const objectiveEligible = Boolean(activePlayer && isObjectiveEligible(players, powerKey, seatState?.secretState));
+  const parsedObjective = parseObjectiveText(seatState?.objective ?? '');
+  const objectiveRollSummary = getObjectiveRollSummary(parsedObjective, activePlayer, players, objectiveEligible);
+  const victoryChance = objectiveRollSummary.chance ?? 0;
+
+  return {
+    objectiveEligible,
+    shouldDeclareVictory: objectiveEligible && victoryChance > 0.4,
+  };
+}
+
 function getRequirementState(cardDefinition, players, currentEvent) {
   if (!cardDefinition) {
     return null;
@@ -1776,33 +1789,41 @@ function App() {
     if (currentPhase === 'victory_check') {
       let changed = false;
       const nextManagerState = { ...gameState.managerState };
+      const nextVictoryReadySelections = { ...((gameState.engineState ?? {}).victoryReadySelections ?? {}) };
 
       for (const powerKey of turnOrder) {
         if (powerKey === activePowerKey) {
           continue;
         }
 
-        const declaredVictory = isObjectiveEligible(
+        const { shouldDeclareVictory } = getLocalVictoryDecision(
           gameState.players,
           powerKey,
-          nextManagerState[powerKey]?.secretState,
+          nextManagerState[powerKey],
         );
 
-        if (nextManagerState[powerKey]?.declaredVictory === declaredVictory) {
-          continue;
+        if (nextManagerState[powerKey]?.declaredVictory !== shouldDeclareVictory) {
+          nextManagerState[powerKey] = {
+            ...nextManagerState[powerKey],
+            declaredVictory: shouldDeclareVictory,
+          };
+          changed = true;
         }
 
-        nextManagerState[powerKey] = {
-          ...nextManagerState[powerKey],
-          declaredVictory,
-        };
-        changed = true;
+        if (!nextVictoryReadySelections[powerKey]) {
+          nextVictoryReadySelections[powerKey] = true;
+          changed = true;
+        }
       }
 
       if (changed) {
         commitLocalState({
           ...gameState,
           managerState: nextManagerState,
+          engineState: {
+            ...(gameState.engineState ?? {}),
+            victoryReadySelections: nextVictoryReadySelections,
+          },
         });
       }
     }
