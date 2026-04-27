@@ -1409,9 +1409,7 @@ function App() {
   const isLocalGame = activeGame?.id === LOCAL_GAME_ID;
   const activeMembership = listedMemberships.find((membership) => membership.game_id === selectedGameId) ?? null;
   const isAdmin = profile?.app_role === 'admin';
-  const canManageGame = Boolean(
-    isLocalGame || isAdmin || (activeGame && session?.user && activeGame.created_by === session.user.id),
-  );
+  const canManageGame = Boolean(activeGame && session?.user);
 
   React.useEffect(() => {
     if (!session?.user) {
@@ -1577,7 +1575,7 @@ function App() {
           return;
         }
 
-        const nextPowerKey = isAdmin
+        const nextPowerKey = canManageGame
           ? board.players.some((player) => player.power_key === activePowerKey)
             ? activePowerKey
             : board.players[0]?.power_key ?? ''
@@ -1614,7 +1612,6 @@ function App() {
     activeMembership?.power_key,
     boardRefreshTick,
     canManageGame,
-    isAdmin,
     isLocalGame,
     localGameState,
     scheduleBoardRefresh,
@@ -1777,12 +1774,12 @@ function App() {
   const canEditSeatAction = Boolean(
     activePlayer &&
       currentPhase === 'choose_actions' &&
-      (isAdmin || activeMembership?.power_key === activePlayer.power_key),
+      (canManageGame || activeMembership?.power_key === activePlayer.power_key),
   );
   const canEditVictory = Boolean(
     activePlayer &&
       currentPhase === 'victory_check' &&
-      (isAdmin || activeMembership?.power_key === activePlayer.power_key),
+      (canManageGame || activeMembership?.power_key === activePlayer.power_key),
   );
   const objectiveEligible = Boolean(
     activePlayer && isObjectiveEligible(boardPlayers, activePlayer.power_key, privateState.secretState),
@@ -3195,7 +3192,7 @@ function App() {
                   {hudPanel === 'seats' ? (
                     <div className="overlay-scroll overlay-stack">
                       <div className="player-tabs overlay-seat-tabs">
-                        {(isAdmin ? boardPlayers : availableSeats).map((player) => (
+                        {(canManageGame ? boardPlayers : availableSeats).map((player) => (
                           <button
                             type="button"
                             key={player.id}
@@ -3208,7 +3205,7 @@ function App() {
                           </button>
                         ))}
                       </div>
-                      {!isAdmin && !isLocalGame && liveGameStatus === 'active' ? (
+                      {!canManageGame && !isLocalGame && liveGameStatus === 'active' ? (
                         <div className="seat-actions">
                           <p className="mini-label">Claim or change your seat</p>
                           <div className="seat-list">

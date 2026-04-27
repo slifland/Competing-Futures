@@ -1,4 +1,4 @@
-export const RULES_VERSION = '2026-04-22-doc-rules-v2';
+export const RULES_VERSION = '2026-04-26-china-action-cards';
 
 export const turnOrder = ['us', 'china', 'lab-a', 'lab-b', 'model'];
 
@@ -44,12 +44,12 @@ const actorDefinitions = {
   },
   china: {
     id: 'china',
-    name: 'China & US Adversaries',
+    name: 'China',
     shortName: 'CN',
     accent: '#f97316',
     role: 'State actor',
     homeClass: 'east-asia',
-    meters: { capabilities: 1, resources: 2, safety: 2, publicSupport: 3 },
+    meters: { capabilities: 1, resources: 3, safety: 2, publicSupport: 3 },
   },
   'lab-a': {
     id: 'lab-a',
@@ -1436,11 +1436,11 @@ const actionDecks = {
       },
       selection: { kind: 'targets', count: 2, options: ['us', 'lab-a', 'lab-b', 'model'] },
       summary:
-        'Success: self +1 Public Support and -1 Resources; two targets each lose 1 Public Support. Fail: self -1 Resources and -1 Public Support.',
+        'Success: self +1 Public Support; two targets each lose 1 Public Support. Fail: self -1 Resources and -1 Public Support.',
       buildOutcome() {
         return {
           success: [
-            { target: 'self', deltas: { publicSupport: 1, resources: -1 } },
+            { target: 'self', deltas: { publicSupport: 1 } },
             { target: 'targets', deltas: { publicSupport: -1 } },
           ],
           failure: [{ target: 'self', deltas: { resources: -1, publicSupport: -1 } }],
@@ -1524,7 +1524,7 @@ const actionDecks = {
         ],
       },
       summary:
-        'Success: self +1 Capabilities and -1 Resources; US -2 Resources; each lab -1 Resources. Fail: self -1 Resources and -1 Public Support.',
+        'Success: self +1 Capabilities and -1 Resources; US -2 Resources; each lab -1 Resources. Fail: self -1 Public Support.',
       buildOutcome() {
         return {
           success: [
@@ -1532,7 +1532,7 @@ const actionDecks = {
             { target: 'actors', actorKeys: ['us'], deltas: { resources: -2 } },
             { target: 'labs', deltas: { resources: -1 } },
           ],
-          failure: [{ target: 'self', deltas: { resources: -1, publicSupport: -1 } }],
+          failure: [{ target: 'self', deltas: { publicSupport: -1 } }],
         };
       },
     },
@@ -1590,10 +1590,10 @@ const actionDecks = {
       name: 'State Compute Buildout',
       count: 1,
       formula: { base: 10, difficulty: 1, terms: [{ track: 'resources', weight: 1 }] },
-      summary: 'Success: self +2 Capabilities and -2 Resources. Fail: self -2 Resources.',
+      summary: 'Success: self +2 Capabilities and -1 Resources. Fail: self -2 Resources.',
       buildOutcome() {
         return {
-          success: [{ target: 'self', deltas: { capabilities: 2, resources: -2 } }],
+          success: [{ target: 'self', deltas: { capabilities: 2, resources: -1 } }],
           failure: [{ target: 'self', deltas: { resources: -2 } }],
         };
       },

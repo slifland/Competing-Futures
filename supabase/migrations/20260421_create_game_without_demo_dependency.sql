@@ -60,7 +60,7 @@ begin
   )
   values
     (new_game_id || '-us', new_game_id, 'us', 'US Government', 'US', '#7dd3fc', 'State actor', 'north-america', 1, 2, 3, 2),
-    (new_game_id || '-china', new_game_id, 'china', 'China & US Adversaries', 'CN', '#f97316', 'State actor', 'east-asia', 1, 2, 2, 3),
+    (new_game_id || '-china', new_game_id, 'china', 'China', 'CN', '#f97316', 'State actor', 'east-asia', 1, 2, 3, 3),
     (new_game_id || '-lab-a', new_game_id, 'lab-a', 'Frontier Lab A', 'A', '#d946ef', 'Commercial lab', 'west-coast', 2, 3, 1, 3),
     (new_game_id || '-lab-b', new_game_id, 'lab-b', 'Frontier Lab B', 'B', '#22c55e', 'Commercial lab', 'europe', 2, 2, 2, 1),
     (new_game_id || '-model', new_game_id, 'model', 'Frontier AI Model', 'AI', '#fde047', 'Emergent actor', 'global', 2, 2, 1, 1);
