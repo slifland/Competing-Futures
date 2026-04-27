@@ -5,8 +5,10 @@ import {
   buildGameInitialization,
   buildDefaultSelectionPayload,
   getActionCard,
+  getActionDeckReference,
   getBaseCardKey,
   getCurrentEvent,
+  getEventReference,
   getEventEffectSummaries,
   isObjectiveEligible,
   phases,
@@ -354,6 +356,151 @@ const LOCAL_GAME_ID = 'local-robots';
 const LOCAL_JOIN_CODE = 'LOCAL';
 const LOCAL_GAME_STATE_STORAGE_KEY = 'cf-local-game-state';
 const LOCAL_SEAT_KEY_STORAGE_KEY = 'cf-local-seat-key';
+const RULEBOOK_SECTIONS = [
+  {
+    title: '1.1 Rules Conflicts',
+    items: [
+      'If a rule and card disagree about a certain action, the card takes precedence over the rules. I.e. cards can provide exceptions to the rules.',
+      'If multiple effects happen simultaneously the players decide which order they resolve in.',
+    ],
+  },
+  {
+    title: '1.2 Hidden Information',
+    items: [
+      "Players should never be able to see another player's hand, and nobody should reveal specific information about cards in their hand. In addition, each player should never know what end game conditions each other player has.",
+    ],
+  },
+  {
+    title: '2.1 Players vs Actors',
+    items: [
+      'Players will take on the roles of different actors important to the advancement of AI. The rules will sometimes refer to them interchangeably, but typically actor will be used for specific rules and abilities specific to factions in the game, while player will be used more for choices and decisions that players will make.',
+    ],
+  },
+  {
+    title: '2.2 Influence Tracks',
+    items: [
+      'The four main tracks used in the game are collectively referred to as the Influence Tracks. The tracks cover Capabilities, which represent slightly different ideas for each faction. For frontier labs, this can represent the strength of their models. For the US government, this can track how well AI is benefitting them, or how well they’re using AI for their benefit. The Safety Investment track measures how dedicated each faction is to AI alignment and safety research. Resources represent economic power as well as corporate/political influence. Finally, Public Support represents the opinion of the general public on a player’s actor.',
+      'Zero-Floor: If an action/event card outcome were to cause a player’s track to go below 0, it stays at 0.',
+      'Ten-Cap: If an action/event card outcome were to cause a player’s track to go above 10, it stays at 10.',
+    ],
+  },
+  {
+    title: '2.2.1 Track Start States',
+    items: [
+      'US Government: Capabilities 1, Resources 3, Safety 2, Public Support 2.',
+      'Frontier Lab A: Capabilities 2, Resources 1, Safety 3, Public Support 3.',
+      'Frontier Lab B: Capabilities 2, Resources 2, Safety 2, Public Support 1.',
+      'China & US Adversaries: Capabilities 1, Resources 2, Safety 2, Public Support 3.',
+      'Frontier AI Model: Capabilities 2, Resources 1, Safety 2, Public Support 1.',
+    ],
+  },
+  {
+    title: '2.3 Action Cards',
+    items: [
+      'Each actor will have a specific deck of Action Cards that are the driving force behind their game. These cards are what will be played on each player’s turn, and will allow the player to progress towards their victory condition.',
+    ],
+  },
+  {
+    title: '2.4 Game Structure',
+    items: [
+      'The game will take place over ten rounds. Each round will have the following structure: a Preliminary Phase where players will draw a certain number of action cards from their personal actor deck, and simultaneously choose one to play this round. The Global Event Phase will follow, where one card from the Global Event Deck will be drawn, with varying effects on different players. Next is the Action Phase, where players will go in order revealing and playing their chosen card. The order will be decided by the event card. After the last player’s action is concluded, the round ends and the next one begins.',
+    ],
+  },
+  {
+    title: '2.5 Setup',
+    items: [
+      "Players can choose or randomly assign each person an actor to play. Each actor will start at a specific position on each track. In addition, each actor will be assigned an End Game Condition, according to their End Game Condition probabilities. See the End Game Condition tables for more information. Each player's End Game Condition defines the scenario by which that player could declare victory. In addition, it defines the success criteria for that player if the game lasts 10 rounds, or ends early due to the singularity. Players should not share these or any information about them with any other player. The exception is that, should the Frontier AI Model player draw the Path Dependent End Game condition, they will reveal this on turn 4 and roll for a new End Game Condition, which will also be kept secret.",
+      'Each player also constitutes their starting action deck, shuffles this deck, and draws a starting hand of 3 cards.',
+    ],
+  },
+  {
+    title: '3.1 Preliminary Phase',
+    items: [
+      'Each player draws up to three cards in their hand if applicable. An order for the Action Phase is determined by the order given on Global Event Card. Each player then simultaneously selects an action card for this round and places it facedown so that other players cannot see it.',
+    ],
+  },
+  {
+    title: '3.2 Global Event Phase',
+    items: [
+      'The top card from the Global Event Deck is revealed, and its effects are resolved instantly as stated on the card. The drawn global event card is placed in the discard and cannot be drawn again in this game.',
+    ],
+  },
+  {
+    title: '3.3 Action Phase',
+    items: [
+      "Each player resolves their chosen action card. Players cannot change the action card they chose in response to the global event, nor can they choose to not resolve their chosen action card. The order for each Action Phase was specified in each Preliminary Phase, before action cards were selected. Effects are applied instantaneously, such that each player's action card can affect the next player's action card.",
+    ],
+  },
+  {
+    title: '3.4 Cleanup and Victory Phase',
+    items: [
+      "Active action cards are placed in each player's discard. Each player checks if they have met their victory conditions. If they have, they have the choice of declaring victory. If they do so, then they win according to the conditions specified on their End Game Condition card and explained in 4.3.1. If they choose not to do so, they cannot change their mind until the next victory phase. If multiple players declare victory at the same time, the tiebreakers are as such:",
+      'Resources',
+      'Capabilities',
+      'Public Support',
+      'Safety',
+      'Random Chance',
+      'If turn 10, or on the turn Singularity card was drawn, victory is determined by the process described in 4.3. If the game is not over and no player has won, then repeat the Game Flow.',
+    ],
+  },
+  {
+    title: '4.1 Global Event Selection',
+    items: [
+      'Each event is assigned probabilities for each quadrant of the game, as seen in the Event Cards tab. Turns 1 and 2 are Quadrant 1. Turns 3, 4, and 5 are Quadrant 2. Turns 6 and 7 are Quadrant 3. Turns 8, 9, and 10 are Quadrant 4. An event’s active probability is defined as 0 if the event is unique and has already been drawn, or the assigned probability for the current quadrant otherwise. To determine the actual probability of drawing each event card during any given event phase, each active probability is turned into a decimal (50% = 0.5), and all event probabilities are run through the softmax function, which computes a decimal probability for each event being drawn in this given turn. A random event is then sampled based on these probabilities.',
+    ],
+  },
+  {
+    title: '4.2 Action Cards',
+    items: [
+      'Each player will always have 3 action cards in hand. When an action card is used, it is discarded and will not be used again. Another action card is drawn to replace it for the next turn. Action cards can either succeed or fail. Effects of success and failure respectively are defined in Action Cards. During a player’s turn, they roll for whether their card will succeed. To do this, you calculate the X value you need to beat with your roll based on the formula displayed on the action card, and round this number down (5.4 -> 5). You then roll a D10, giving you a result between 1 and 10, and succeed if you meet or exceed the number rolled. Failing to meet this number results in failure. Any impacts of the action card are instantaneous.',
+    ],
+  },
+  {
+    title: '4.3.1 End Game Condition Outcomes',
+    items: [
+      'When a player declares victory during the Cleanup and Victory phase, due to having met the secret end game condition they were assigned, there are three possible outcomes:',
+      'Roll For Safety: Let S = this player’s position on the safety track. Let X = the result of a D10 Roll. Win if X ≤ S. Frontier AI Model wins otherwise.',
+      'Roll Safety Against Capabilities: Let S = this player’s position on the safety track. Let X = the result of a D10 roll. Let C = the frontier AI model player’s position on the capabilities track (in other words, the max capabilities of any player). Let target T = 7 - C + S. This player wins if X ≤ T. Frontier AI Model wins otherwise.',
+      'Automatic Victory: The player achieves automatic victory.',
+      'If multiple players would win at the same time, the tiebreakers in 3.4 are applied.',
+    ],
+  },
+  {
+    title: '4.3.2 Natural Game End Scoring',
+    items: [
+      'Following the conclusion of turn ten, if no player has declared their fulfillment of their victory conditions as per 3.4, then the game is broken in the same tiebreaker:',
+      'Resources',
+      'Capabilities',
+      'Public Support',
+      'Safety',
+      'Random Chance',
+      'In the unlikely event that players are tied on the first four tiers of the tiebreaker, then each player tied will roll a dice and whoever has the higher result wins.',
+    ],
+  },
+  {
+    title: '4.4 Path Dependent Frontier AI Goal',
+    items: [
+      'The Frontier AI Model player can be assigned a path dependent end game condition. Under this condition, the player should still keep their condition secret, until the Victory and Cleanup Phase of turn 4. At this point, the player should declare their path dependent victory condition, and is assigned a new goal. Other players know the Frontier AI Model has received a new goal but do not know which one. Define S = cumulative safety investment of all players. Define C = cumulative capabilities investment of all players.',
+      'The probabilities are as follows:',
+      'Full Alignment: ((S / (S + C)) / 2) * 100%',
+      'Partial Alignment: 50%',
+      'Rogue AI: ((C / (S + C)) / 2) * 100%',
+      'In the case that the singularity card is drawn on turn 4 or before, the Frontier AI Model player is immediately and secretly assigned a win condition according to the above formula during the global events phase.',
+    ],
+  },
+  {
+    title: '4.5 Frontier AI Model Capabilities',
+    items: [
+      'The Frontier AI Model always has the capability level of the max capability actor. If the Frontier AI Model improves capabilities with an action card, then all player’s capabilities increase.',
+    ],
+  },
+];
+const DECK_LABELS = {
+  us: 'US Government',
+  china: 'China',
+  labs: 'Frontier Labs A/B',
+  model: 'Frontier AI Model',
+};
 
 function randomInt(maxExclusive) {
   return Math.floor(Math.random() * maxExclusive);
@@ -1123,6 +1270,151 @@ function OutcomeTable({ title, rows, emptyLabel = 'No change', tone = 'success' 
   );
 }
 
+function formatFormulaReference(formula) {
+  if (!formula) {
+    return 'No roll formula.';
+  }
+
+  const terms = formula.terms
+    .map((term) => {
+      const track = tracks.find((entry) => entry.key === term.track)?.label ?? term.track;
+      return `${term.weight}x ${track}`;
+    })
+    .join(' + ');
+
+  return `d10 >= floor(${formula.base - 1} - ${formula.difficulty} x (${terms}))`;
+}
+
+function formatSelectionReference(selection) {
+  if (!selection) {
+    return 'No target choice.';
+  }
+
+  if (selection.kind === 'target') {
+    return `Choose one target: ${selection.options.join(', ')}.`;
+  }
+
+  if (selection.kind === 'targets') {
+    return `Choose ${selection.count} targets: ${selection.options.join(', ')}.`;
+  }
+
+  if (selection.kind === 'allocation') {
+    return `Allocate ${selection.total} point(s) between Capabilities and Safety.`;
+  }
+
+  if (selection.kind === 'target_and_axis') {
+    return `Choose target ${selection.options.join(', ')} and either Capabilities or Safety.`;
+  }
+
+  return 'Custom choice.';
+}
+
+function formatEventProbability(probability) {
+  return `${Math.round(probability * 1000) / 10}%`;
+}
+
+function ReferenceLibrary({ actionDecks, events }) {
+  return (
+    <div className="overlay-scroll reference-library">
+      <section className="reference-section">
+        <div className="section-heading">
+          <p className="eyebrow">Rulebook</p>
+          <h2>Rules tab</h2>
+          <p className="overlay-copy">Text in bold defines key terms. Source: Competing Futures Google Doc / Rules tab.</p>
+        </div>
+        <div className="rulebook-grid">
+          {RULEBOOK_SECTIONS.map((section) => (
+            <article className="reference-card" key={section.title}>
+              <h3>{section.title}</h3>
+              <ul>
+                {section.items.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="reference-section">
+        <div className="section-heading">
+          <p className="eyebrow">Action cards</p>
+          <h2>Frequencies and effects</h2>
+        </div>
+        <div className="reference-deck-list">
+          {actionDecks.map((deck) => {
+            const totalCards = deck.cards.reduce((sum, card) => sum + card.count, 0);
+            return (
+              <article className="reference-deck" key={deck.deckKey}>
+                <div className="reference-deck-head">
+                  <div>
+                    <p className="mini-label">{totalCards} cards</p>
+                    <h3>{DECK_LABELS[deck.deckKey] ?? deck.deckKey}</h3>
+                  </div>
+                </div>
+                <div className="reference-table">
+                  <div className="reference-table-head action-reference-table">
+                    <span>Card</span>
+                    <span>Freq</span>
+                    <span>Roll</span>
+                    <span>Effect</span>
+                  </div>
+                  {deck.cards.map((card) => (
+                    <div className="reference-table-row action-reference-table" key={card.key}>
+                      <strong>{card.name}</strong>
+                      <span>{card.count}</span>
+                      <span>{formatFormulaReference(card.formula)}</span>
+                      <span>
+                        {card.summary}
+                        <small>{formatSelectionReference(card.selection)}</small>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="reference-section">
+        <div className="section-heading">
+          <p className="eyebrow">Global events</p>
+          <h2>Probabilities and effects</h2>
+        </div>
+        <div className="reference-table">
+          <div className="reference-table-head event-reference-table">
+            <span>Event</span>
+            <span>Q1</span>
+            <span>Q2</span>
+            <span>Q3</span>
+            <span>Q4</span>
+            <span>Effect</span>
+          </div>
+          {events.map((event) => (
+            <div className="reference-table-row event-reference-table" key={event.key}>
+              <strong>
+                {event.number}. {event.title}
+              </strong>
+              {event.drawProbabilities.map((probability, index) => (
+                <span key={`${event.key}-${index}`}>{formatEventProbability(probability)}</span>
+              ))}
+              <span>
+                {event.effects.length ? event.effects.join(' | ') : 'No track change.'}
+                <small>Order: {event.actionOrder.join(' -> ')}</small>
+              </span>
+            </div>
+          ))}
+        </div>
+        <p className="overlay-copy">
+          Q1 is rounds 1-2, Q2 is rounds 3-5, Q3 is rounds 6-7, and Q4 is rounds 8-10.
+          These are base draw chances before any events in that quadrant have been drawn; chances are recalculated among remaining events during play.
+        </p>
+      </section>
+    </div>
+  );
+}
+
 function App() {
   const [authReady, setAuthReady] = React.useState(false);
   const [authLoading, setAuthLoading] = React.useState(false);
@@ -1796,6 +2088,8 @@ function App() {
     objectiveEligible,
   );
   const currentEventEffects = React.useMemo(() => getEventEffectSummaries(currentEvent), [currentEvent]);
+  const actionDeckReference = React.useMemo(() => getActionDeckReference(), []);
+  const eventReference = React.useMemo(() => getEventReference(), []);
   const commitLocalState = React.useCallback((nextState) => {
     setLocalGameState(nextState);
     setGameState(nextState);
@@ -2771,6 +3065,7 @@ function App() {
             : 'Victory declarations are checked before the next round begins.';
   const dockButtons = [
     { key: 'cards', label: 'Cards', badge: 'A' },
+    { key: 'rules', label: 'Rules', badge: 'R' },
     { key: 'event', label: 'Event', badge: 'E' },
     { key: 'tracks', label: 'Tracks', badge: 'T' },
     { key: 'objective', label: 'Win', badge: 'W' },
@@ -2833,6 +3128,28 @@ function App() {
             <button type="button" className="auth-button" onClick={() => setWaitingOnPlayers([])}>
               Close
             </button>
+          </section>
+        </div>
+      ) : null}
+
+      {!activeGameReady && hudPanel === 'rules' ? (
+        <div className="game-overlay-layer lobby-reference-layer" role="presentation" onClick={() => setHudPanel(null)}>
+          <section
+            className="game-overlay-card"
+            role="dialog"
+            aria-modal="false"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="game-overlay-head">
+              <div>
+                <p className="eyebrow">Reference</p>
+                <h2>Rules and card library</h2>
+              </div>
+              <button type="button" className="ghost overlay-close" onClick={() => setHudPanel(null)}>
+                Close
+              </button>
+            </div>
+            <ReferenceLibrary actionDecks={actionDeckReference} events={eventReference} />
           </section>
         </div>
       ) : null}
@@ -2912,6 +3229,8 @@ function App() {
                       <h2>
                         {hudPanel === 'cards'
                           ? `${activePlayer?.name ?? 'Seat'} actions`
+                          : hudPanel === 'rules'
+                            ? 'Rules and card library'
                           : hudPanel === 'event'
                             ? currentPhase === 'choose_actions'
                               ? 'Hidden global event'
@@ -2929,6 +3248,10 @@ function App() {
                       Close
                     </button>
                   </div>
+
+                  {hudPanel === 'rules' ? (
+                    <ReferenceLibrary actionDecks={actionDeckReference} events={eventReference} />
+                  ) : null}
 
                   {hudPanel === 'cards' ? (
                     <div className="overlay-scroll">
@@ -3405,6 +3728,9 @@ function App() {
                   <strong>{activeMembership?.power_key ?? activeMembership?.membership_role ?? 'none'}</strong>
                 </div>
                 <div className="hero-actions">
+                  <button type="button" className="ghost" onClick={() => setHudPanel('rules')}>
+                    Rules
+                  </button>
                   <button type="button" className="ghost" onClick={signOut}>
                     Sign out
                   </button>
@@ -3549,6 +3875,18 @@ function App() {
                   <p className="mini-label">
                     {liveJoinCode ? `Join code: ${liveJoinCode}` : 'Create or join a game to continue.'}
                   </p>
+                </div>
+                <div className="event-panel compact">
+                  <p className="event-label">Rules reference</p>
+                  <h2>Rulebook, cards, and events</h2>
+                  <p>
+                    Open the full reference to review the rulebook, every action card frequency and effect, and the global event probabilities.
+                  </p>
+                  <div className="hero-actions">
+                    <button type="button" onClick={() => setHudPanel('rules')}>
+                      Open reference
+                    </button>
+                  </div>
                 </div>
                 <div className="event-panel compact">
                   <p className="event-label">How players join</p>

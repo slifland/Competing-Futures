@@ -1062,6 +1062,24 @@ export function getEventDefinition(eventKey) {
   return eventIndex.get(eventKey) ?? null;
 }
 
+export function getEventReference() {
+  const probabilitiesByQuadrant = [0, 1, 2, 3].map((quadrant) => {
+    const weights = softmax(eventDefinitions.map((event) => event.quadrantProbabilities[quadrant]));
+    return new Map(eventDefinitions.map((event, index) => [event.key, weights[index] ?? 0]));
+  });
+
+  return eventDefinitions.map((event) => ({
+    key: event.key,
+    number: event.number,
+    title: event.title,
+    details: event.details,
+    effects: getEventEffectSummaries(event),
+    actionOrder: event.actionOrder,
+    quadrantProbabilities: event.quadrantProbabilities,
+    drawProbabilities: probabilitiesByQuadrant.map((probabilities) => probabilities.get(event.key) ?? 0),
+  }));
+}
+
 function getQuadrant(round) {
   if (round <= 2) {
     return 0;
@@ -1807,6 +1825,21 @@ for (const [deckKey, cards] of Object.entries(actionDecks)) {
 
 export function getActionCard(cardKey) {
   return cardIndex.get(cardKey) ?? null;
+}
+
+export function getActionDeckReference() {
+  return Object.entries(actionDecks).map(([deckKey, cards]) => ({
+    deckKey,
+    cards: cards.map((card) => ({
+      key: card.key,
+      name: card.name,
+      count: card.count,
+      summary: card.summary,
+      formula: card.formula,
+      selection: card.selection,
+      tags: card.tags ?? [],
+    })),
+  }));
 }
 
 export function getBaseCardKey(cardInstanceKey) {

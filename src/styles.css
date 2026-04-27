@@ -891,6 +891,10 @@ button {
   color: var(--muted);
 }
 
+.lobby-reference-layer {
+  padding: 2rem 1rem;
+}
+
 .overlay-stack {
   display: grid;
   gap: 0.9rem;
@@ -907,6 +911,112 @@ button {
 
 .overlay-seat-tabs {
   grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+}
+
+.reference-library {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.reference-section,
+.reference-deck-list,
+.rulebook-grid {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.rulebook-grid {
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+}
+
+.reference-card,
+.reference-deck {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.reference-card {
+  padding: 0.9rem 1rem;
+}
+
+.reference-card h3,
+.reference-deck h3 {
+  margin: 0;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.reference-card ul {
+  margin: 0.75rem 0 0;
+  padding-left: 1.1rem;
+  color: var(--muted);
+}
+
+.reference-card li + li {
+  margin-top: 0.45rem;
+}
+
+.reference-deck {
+  padding: 0.85rem;
+}
+
+.reference-deck-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: start;
+  margin-bottom: 0.75rem;
+}
+
+.reference-table {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.reference-table-head,
+.reference-table-row {
+  display: grid;
+  gap: 0.6rem;
+  align-items: start;
+}
+
+.reference-table-head {
+  color: var(--muted);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.reference-table-row {
+  padding: 0.72rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.reference-table-row strong {
+  line-height: 1.25;
+}
+
+.reference-table-row span {
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.reference-table-row small {
+  display: block;
+  margin-top: 0.35rem;
+  color: rgba(244, 238, 223, 0.58);
+}
+
+.action-reference-table {
+  grid-template-columns: minmax(10rem, 1.25fr) minmax(3rem, 0.25fr) minmax(14rem, 1.35fr) minmax(18rem, 2fr);
+}
+
+.event-reference-table {
+  grid-template-columns: minmax(12rem, 1.35fr) repeat(4, minmax(3rem, 0.35fr)) minmax(20rem, 2.2fr);
 }
 
 .status-bar {
@@ -1439,7 +1549,9 @@ button.ready-confirmed:disabled {
   .criteria-table-head,
   .criteria-table-row,
   .outcome-table-head,
-  .outcome-table-row {
+  .outcome-table-row,
+  .action-reference-table,
+  .event-reference-table {
     grid-template-columns: 1fr;
   }
 
