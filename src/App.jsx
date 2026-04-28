@@ -3293,23 +3293,31 @@ function App() {
                               <p className="mini-label">{isSelected ? 'Selected action' : 'Action card'}</p>
                               <h3>{card.name}</h3>
                               <div className="odds-strip">
-                                <div className="odds-stat primary">
-                                  <span className="mini-label">Success odds</span>
-                                  <strong>{formatPercent(effectiveChance)}</strong>
-                                  <small>{successThreshold != null ? `Need d10 roll >= ${successThreshold}` : 'No roll data'}</small>
-                                </div>
-                                <div className="odds-stat">
-                                  <span className="mini-label">Base roll</span>
-                                  <strong>{formatPercent(rollSuccessChance)}</strong>
-                                  <small>From current track values</small>
-                                </div>
                                 {requirementState ? (
-                                  <div className={requirementState.met ? 'odds-stat requirement met' : 'odds-stat requirement blocked'}>
-                                    <span className="mini-label">Requirement</span>
-                                    <strong>{requirementState.met ? 'Live' : 'Blocked'}</strong>
-                                    <small>{requirementState.label}</small>
+                                  <>
+                                    <div className="odds-stat primary">
+                                      <span className="mini-label">Success odds</span>
+                                      <strong>{formatPercent(effectiveChance)}</strong>
+                                      <small>{successThreshold != null ? `Need d10 roll >= ${successThreshold}` : 'No roll data'}</small>
+                                    </div>
+                                    <div className="odds-stat">
+                                      <span className="mini-label">Roll odds</span>
+                                      <strong>{formatPercent(rollSuccessChance)}</strong>
+                                      <small>From current track values</small>
+                                    </div>
+                                    <div className={requirementState.met ? 'odds-stat requirement met' : 'odds-stat requirement blocked'}>
+                                      <span className="mini-label">Requirement</span>
+                                      <strong>{requirementState.met ? 'Live' : 'Blocked'}</strong>
+                                      <small>{requirementState.label}</small>
+                                    </div>
+                                  </>
+                                ) : (
+                                  <div className="odds-stat primary">
+                                    <span className="mini-label">Roll odds</span>
+                                    <strong>{formatPercent(rollSuccessChance)}</strong>
+                                    <small>{successThreshold != null ? `Need d10 roll >= ${successThreshold}` : 'No roll data'}</small>
                                   </div>
-                                ) : null}
+                                )}
                               </div>
                               <div className="impact-notes impact-bullets">
                                 <ul>
